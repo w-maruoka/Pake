@@ -268,6 +268,11 @@ describe("event link guard", () => {
     expect(isDownloadableFile("https://example.com/files/component.mdx")).toBe(
       true,
     );
+    expect(
+      isDownloadableFile(
+        "https://chatgpt.com/backend-api/estuary/content?id=file_123&fn=even-g2-codex-setup.md&cd=attachment",
+      ),
+    ).toBe(true);
   });
 
   it("downloads target blank internal file links instead of navigating in-place", () => {
@@ -291,6 +296,53 @@ describe("event link guard", () => {
       {
         href: "https://chatgpt.com/backend-api/files/report.md",
         download: "report.md",
+      },
+    ]);
+  });
+
+  it("downloads target blank ChatGPT attachment links with filenames in query params", () => {
+    const context = loadEventHelpers({ withTauri: true });
+    context.window.location.href = "https://chatgpt.com/c/123";
+    context.window.location.origin = "https://chatgpt.com";
+    context.window.location.pathname = "/c/123";
+    context.window.pakeConfig = { new_window: false };
+    runDomReady(context);
+
+    const url =
+      "https://chatgpt.com/backend-api/estuary/content?id=file_123&fn=even-g2-codex-setup.md&cd=attachment";
+    const event = makeClickEvent(makeAnchor(url, "_blank"));
+    getClickGuard(context)(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopImmediatePropagation).toHaveBeenCalled();
+    expect(context.window.location.href).toBe("https://chatgpt.com/c/123");
+    expect(context.invokeCalls).toEqual([]);
+    expect(context.nativeDownloadClicks).toEqual([
+      {
+        href: url,
+        download: "even-g2-codex-setup.md",
+      },
+    ]);
+  });
+
+  it("downloads window.open ChatGPT attachment links instead of navigating in-place", () => {
+    const context = loadEventHelpers({ withTauri: true });
+    context.window.location.href = "https://chatgpt.com/c/123";
+    context.window.location.origin = "https://chatgpt.com";
+    context.window.location.pathname = "/c/123";
+    context.window.pakeConfig = { new_window: false };
+    runDomReady(context);
+
+    const url =
+      "https://chatgpt.com/backend-api/estuary/content?id=file_123&fn=even-g2-codex-setup.md&cd=attachment";
+    const result = context.window.open(url, "_blank");
+
+    expect(result).toBeNull();
+    expect(context.window.location.href).toBe("https://chatgpt.com/c/123");
+    expect(context.nativeDownloadClicks).toEqual([
+      {
+        href: url,
+        download: "even-g2-codex-setup.md",
       },
     ]);
   });

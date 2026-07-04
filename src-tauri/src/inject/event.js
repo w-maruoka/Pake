@@ -180,6 +180,23 @@ const DOWNLOAD_PATH_PATTERNS = [
   "/dist/",
 ];
 
+const DOWNLOAD_FILENAME_QUERY_PARAMS = [
+  "filename",
+  "fileName",
+  "file_name",
+  "fn",
+  "name",
+];
+
+const DOWNLOAD_DISPOSITION_QUERY_PARAMS = [
+  "cd",
+  "content-disposition",
+  "content_disposition",
+  "response-content-disposition",
+  "response_content_disposition",
+  "disposition",
+];
+
 // Language detection utilities
 function getUserLanguage() {
   return navigator.language || navigator.userLanguage;
@@ -213,24 +230,55 @@ function showDownloadError(filename) {
 
 function getExtension(url) {
   try {
-    const pathname = new URL(url).pathname.toLowerCase();
-    const extensionIndex = pathname.lastIndexOf(".");
-    return extensionIndex > -1 ? pathname.slice(extensionIndex + 1) : "";
+    const filename = getExplicitFilenameFromUrl(url).toLowerCase();
+    const extensionIndex = filename.lastIndexOf(".");
+    return extensionIndex > -1 ? filename.slice(extensionIndex + 1) : "";
   } catch (e) {
     return "";
   }
 }
 
+function getFilenameFromPathname(pathname) {
+  const filename = decodeURIComponent(
+    pathname.substring(pathname.lastIndexOf("/") + 1),
+  );
+  return filename && filename.includes(".") ? filename : "";
+}
+
+function getFilenameFromQuery(urlObj) {
+  for (const param of DOWNLOAD_FILENAME_QUERY_PARAMS) {
+    const value = urlObj.searchParams.get(param);
+    if (!value) continue;
+
+    const filename = getFilenameFromPathname(value);
+    if (filename) {
+      return filename;
+    }
+  }
+
+  return "";
+}
+
 function getExplicitFilenameFromUrl(url) {
   try {
-    const pathname = new URL(url).pathname;
-    const filename = decodeURIComponent(
-      pathname.substring(pathname.lastIndexOf("/") + 1),
+    const urlObj = new URL(url);
+    return (
+      getFilenameFromPathname(urlObj.pathname) || getFilenameFromQuery(urlObj)
     );
-    return filename && filename.includes(".") ? filename : "";
   } catch (e) {
     return "";
   }
+}
+
+function hasAttachmentDisposition(urlObj) {
+  for (const param of DOWNLOAD_DISPOSITION_QUERY_PARAMS) {
+    const value = urlObj.searchParams.get(param);
+    if (value && value.toLowerCase().includes("attachment")) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function isPreviewableMedia(url) {
@@ -249,7 +297,8 @@ function isDownloadableFile(url) {
     const urlObj = new URL(url);
     const hasDownloadHints =
       urlObj.searchParams.has("download") ||
-      urlObj.searchParams.has("attachment");
+      urlObj.searchParams.has("attachment") ||
+      hasAttachmentDisposition(urlObj);
 
     if (hasDownloadHints) {
       return true;
@@ -618,6 +667,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const baseUrl = window.location.origin + window.location.pathname;
       const hrefUrl = new URL(url, baseUrl);
       const absoluteUrl = hrefUrl.href;
+
+      if (isDownloadableFile(absoluteUrl)) {
+        triggerNativeDownload(
+          absoluteUrl,
+          getExplicitFilenameFromUrl(absoluteUrl),
+        );
+        return null;
+      }
 
       if (!isInternalUrl(absoluteUrl)) {
         if (forceInternalNavigation) {
