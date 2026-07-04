@@ -11,9 +11,20 @@ const repoRoot = path.resolve(
   "..",
 );
 const pnpm = ["npx", "pnpm@10.26.2"];
+const appPresets = {
+  chatgpt: {
+    url: "https://chatgpt.com/",
+    name: "ChatGPT Pake",
+  },
+  amazon: {
+    url: "https://www.amazon.co.jp/",
+    name: "Amazon Pake",
+  },
+};
 
 const helpText = `Usage:
   node scripts/pake-ops.mjs build-app --url <url> --name <app name> [--install]
+  node scripts/pake-ops.mjs build-app --preset <chatgpt|amazon> [--install]
   node scripts/pake-ops.mjs install-dmg --dmg <path-to-dmg> [--dry-run]
   node scripts/pake-ops.mjs verify-download-fix [--install]
   node scripts/pake-ops.mjs verify [--install] [--test <path>] [--prettier <path>] [--cli-build]
@@ -39,8 +50,15 @@ Commands:
       --linux-targets appimage
       --force-internal-navigation false
 
+    Speed shortcuts:
+      --preset chatgpt|amazon   Fill --url and --name for common personal apps.
+      --app-version auto        Bump the installed app's patch version.
+      --quit-running            Quit the app before installing the new DMG.
+      --dry-run                 Print the planned workflow/install commands only.
+
     Useful examples:
       node scripts/pake-ops.mjs build-app --url https://chatgpt.com/ --name "ChatGPT Pake" --app-version 1.0.1 --install
+      node scripts/pake-ops.mjs build-app --preset chatgpt --app-version auto --install --quit-running
       node scripts/pake-ops.mjs build-app --url https://www.amazon.co.jp/ --name "Amazon Pake" --install
       node scripts/pake-ops.mjs build-app --run-id 28696551338 --name "ChatGPT Pake" --install
 
@@ -67,10 +85,12 @@ function quote(value) {
   return /\s/.test(value) ? JSON.stringify(value) : value;
 }
 
+function formatCommand(bin, args) {
+  return [bin, ...args].map((part) => quote(String(part))).join(" ");
+}
+
 function logCommand(bin, args) {
-  console.error(
-    `$ ${[bin, ...args].map((part) => quote(String(part))).join(" ")}`,
-  );
+  console.error(`$ ${formatCommand(bin, args)}`);
 }
 
 function run(bin, args, options = {}) {
@@ -162,6 +182,41 @@ function boolOpt(options, name, fallback = false) {
   return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 }
 
+function applyPreset(options) {
+  const presetName = options.preset
+    ? String(options.preset).trim().toLowerCase()
+    : "";
+  if (!presetName) {
+    return options;
+  }
+
+  const preset = appPresets[presetName];
+  if (!preset) {
+    fail(
+      `Unknown preset: ${options.preset}. Available presets: ${Object.keys(
+        appPresets,
+      ).join(", ")}`,
+    );
+  }
+
+  return {
+    ...preset,
+    ...options,
+    preset: presetName,
+  };
+}
+
+function nextPatchVersion(version) {
+  const match = String(version)
+    .trim()
+    .match(/^(\d+)\.(\d+)\.(\d+)$/);
+  if (!match) {
+    return "1.0.0";
+  }
+
+  return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
+}
+
 function slug(value) {
   return String(value || "pake-app")
     .toLowerCase()
@@ -210,9 +265,152 @@ function parseVolumePath(attachOutput) {
   return matches.length ? matches[matches.length - 1][0].trim() : "";
 }
 
-function readBundleValue(appPath, key) {
+function tryReadBundleValue(appPath, key) {
   const infoPath = path.join(appPath, "Contents", "Info");
-  return runCapture("defaults", ["read", infoPath, key]).trim();
+  const result = spawnSync("defaults", ["read", infoPath, key], {
+    cwd: repoRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+  });
+
+  if (result.status !== 0 || result.error) {
+    return "";
+  }
+
+  return (result.stdout || "").trim();
+}
+
+function readBundleValue(appPath, key) {
+  const value = tryReadBundleValue(appPath, key);
+  if (!value) {
+    fail(`Unable to read ${key} from ${appPath}`);
+  }
+  return value;
+}
+
+function installedAppPath(appName) {
+  return path.join("/Applications", `${appName.replace(/\.app$/, "")}.app`);
+}
+
+function resolveAppVersion(appName, requestedVersion) {
+  if (requestedVersion !== "auto") {
+    return requestedVersion;
+  }
+
+  const installedPath = installedAppPath(appName);
+  const currentVersion = fs.existsSync(installedPath)
+    ? tryReadBundleValue(installedPath, "CFBundleShortVersionString")
+    : "";
+  const nextVersion = nextPatchVersion(currentVersion);
+
+  console.error(
+    currentVersion
+      ? `auto app version: ${currentVersion} -> ${nextVersion}`
+      : `auto app version: no installed ${appName}; using ${nextVersion}`,
+  );
+
+  return nextVersion;
+}
+
+function appMetadata(appPath) {
+  const appName = path.basename(appPath).replace(/\.app$/, "");
+  return {
+    appName,
+    bundleName: tryReadBundleValue(appPath, "CFBundleName"),
+    bundleIdentifier: tryReadBundleValue(appPath, "CFBundleIdentifier"),
+    bundleExecutable: tryReadBundleValue(appPath, "CFBundleExecutable"),
+  };
+}
+
+function pgrepLines(pattern) {
+  if (!pattern) {
+    return [];
+  }
+
+  const result = spawnSync("pgrep", ["-fl", pattern], {
+    cwd: repoRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+  });
+
+  if (result.error || result.status !== 0) {
+    return [];
+  }
+
+  return (result.stdout || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !line.includes("scripts/pake-ops.mjs"));
+}
+
+function runningAppProcesses(metadata) {
+  const patterns = [
+    metadata.appName,
+    metadata.bundleName,
+    metadata.bundleIdentifier,
+    metadata.bundleExecutable,
+  ].filter(Boolean);
+  const seen = new Set();
+  const lines = [];
+
+  for (const pattern of patterns) {
+    for (const line of pgrepLines(pattern)) {
+      const pid = line.split(/\s+/, 1)[0] || line;
+      if (!seen.has(pid)) {
+        seen.add(pid);
+        lines.push(line);
+      }
+    }
+  }
+
+  return lines;
+}
+
+function runOptional(bin, args) {
+  logCommand(bin, args);
+  return spawnSync(bin, args, {
+    cwd: repoRoot,
+    stdio: "inherit",
+    encoding: "utf8",
+  });
+}
+
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function quitRunningApp(metadata) {
+  const beforeQuit = runningAppProcesses(metadata);
+  if (beforeQuit.length === 0) {
+    return;
+  }
+
+  const appSelector = metadata.bundleIdentifier
+    ? `id ${JSON.stringify(metadata.bundleIdentifier)}`
+    : JSON.stringify(metadata.bundleName || metadata.appName);
+  const result = runOptional("osascript", [
+    "-e",
+    `tell application ${appSelector} to quit`,
+  ]);
+
+  if (result.status !== 0) {
+    fail(`Unable to quit ${metadata.bundleName || metadata.appName}`);
+  }
+
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    if (runningAppProcesses(metadata).length === 0) {
+      return;
+    }
+    sleep(250);
+  }
+
+  fail(
+    `${metadata.bundleName || metadata.appName} is still running after quit request:\n${runningAppProcesses(
+      metadata,
+    ).join("\n")}`,
+  );
 }
 
 function installDmg(dmgPath, options = {}) {
@@ -226,6 +424,9 @@ function installDmg(dmgPath, options = {}) {
   if (dryRun) {
     console.log(`dry-run: would validate ${absoluteDmg}`);
     console.log(`dry-run: would mount ${absoluteDmg}`);
+    if (options.quitRunning) {
+      console.log("dry-run: would quit the contained app if it is running");
+    }
     console.log("dry-run: would copy the contained .app into /Applications");
     console.log(
       "dry-run: would read installed bundle metadata and detach the DMG",
@@ -260,20 +461,16 @@ function installDmg(dmgPath, options = {}) {
     const appName = path.basename(sourceApp);
     const displayName = appName.replace(/\.app$/, "");
     const destinationApp = path.join("/Applications", appName);
+    const metadata = appMetadata(sourceApp);
 
-    const pgrep = spawnSync("pgrep", ["-fl", displayName], {
-      cwd: repoRoot,
-      stdio: ["ignore", "pipe", "pipe"],
-      encoding: "utf8",
-    });
-    const runningLines = (pgrep.stdout || "")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .filter((line) => !line.includes("scripts/pake-ops.mjs"));
-    if (pgrep.status === 0 && runningLines.length > 0) {
+    if (options.quitRunning) {
+      quitRunningApp(metadata);
+    }
+
+    const runningLines = runningAppProcesses(metadata);
+    if (runningLines.length > 0) {
       fail(
-        `${displayName} appears to be running. Quit it before installing:\n${runningLines.join(
+        `${displayName} appears to be running. Quit it or pass --quit-running before installing:\n${runningLines.join(
           "\n",
         )}`,
       );
@@ -340,30 +537,40 @@ function verifyDownloadFix(options) {
 }
 
 function buildApp(options) {
-  const repo = String(opt(options, "repo", "w-maruoka/Pake"));
-  const workflow = String(opt(options, "workflow", "Build My Pake App"));
-  const ref = String(opt(options, "ref", "main"));
-  const name = String(opt(options, "name", ""));
-  let runId = options["run-id"] ? String(options["run-id"]) : "";
+  const resolvedOptions = applyPreset(options);
+  const repo = String(opt(resolvedOptions, "repo", "w-maruoka/Pake"));
+  const workflow = String(
+    opt(resolvedOptions, "workflow", "Build My Pake App"),
+  );
+  const ref = String(opt(resolvedOptions, "ref", "main"));
+  const name = String(opt(resolvedOptions, "name", ""));
+  let runId = resolvedOptions["run-id"]
+    ? String(resolvedOptions["run-id"])
+    : "";
+  const dryRun = boolOpt(resolvedOptions, "dry-run", false);
 
   if (!runId) {
-    const url = requireOption(options, "url");
+    const url = requireOption(resolvedOptions, "url");
+    const appName = requireOption(resolvedOptions, "name");
     const fields = {
-      platform: opt(options, "platform", "macos-latest"),
+      platform: opt(resolvedOptions, "platform", "macos-latest"),
       url,
-      name: requireOption(options, "name"),
-      icon: opt(options, "icon", ""),
-      width: opt(options, "width", "1200"),
-      height: opt(options, "height", "800"),
-      app_version: opt(options, "app-version", "1.0.0"),
-      fullscreen: boolOpt(options, "fullscreen", false),
-      hide_title_bar: boolOpt(options, "hide-title-bar", true),
-      multi_arch: boolOpt(options, "multi-arch", true),
-      macos_target: opt(options, "macos-target", "universal"),
-      windows_target: opt(options, "windows-target", "x64"),
-      linux_targets: opt(options, "linux-targets", "appimage"),
+      name: appName,
+      icon: opt(resolvedOptions, "icon", ""),
+      width: opt(resolvedOptions, "width", "1200"),
+      height: opt(resolvedOptions, "height", "800"),
+      app_version: resolveAppVersion(
+        appName,
+        String(opt(resolvedOptions, "app-version", "1.0.0")),
+      ),
+      fullscreen: boolOpt(resolvedOptions, "fullscreen", false),
+      hide_title_bar: boolOpt(resolvedOptions, "hide-title-bar", true),
+      multi_arch: boolOpt(resolvedOptions, "multi-arch", true),
+      macos_target: opt(resolvedOptions, "macos-target", "universal"),
+      windows_target: opt(resolvedOptions, "windows-target", "x64"),
+      linux_targets: opt(resolvedOptions, "linux-targets", "appimage"),
       force_internal_navigation: boolOpt(
-        options,
+        resolvedOptions,
         "force-internal-navigation",
         false,
       ),
@@ -374,6 +581,16 @@ function buildApp(options) {
       ghArgs.push("-f", `${key}=${value}`);
     }
 
+    if (dryRun) {
+      console.log(`dry-run: would run ${formatCommand("gh", ghArgs)}`);
+      if (boolOpt(resolvedOptions, "install", false)) {
+        console.log(
+          `dry-run: would watch the run, download artifacts, validate the DMG, and install ${appName}`,
+        );
+      }
+      return;
+    }
+
     const output = runCapture("gh", ghArgs);
     const match = output.match(/\/runs\/(\d+)/);
     if (!match) {
@@ -382,14 +599,25 @@ function buildApp(options) {
     runId = match[1];
   }
 
-  if (!boolOpt(options, "no-watch", false)) {
+  if (dryRun) {
+    console.log(
+      `dry-run: would watch/download artifacts for run ${runId} from ${repo}`,
+    );
+    return;
+  }
+
+  if (!boolOpt(resolvedOptions, "no-watch", false)) {
     run("gh", ["run", "watch", runId, "-R", repo, "--exit-status"]);
   }
 
   const outRoot = path.resolve(
     repoRoot,
     String(
-      opt(options, "out", path.join("artifacts", `${slug(name)}-${runId}`)),
+      opt(
+        resolvedOptions,
+        "out",
+        path.join("artifacts", `${slug(name)}-${runId}`),
+      ),
     ),
   );
   fs.mkdirSync(outRoot, { recursive: true });
@@ -405,7 +633,7 @@ function buildApp(options) {
     validateDmg(dmg);
   }
 
-  if (boolOpt(options, "install", false)) {
+  if (boolOpt(resolvedOptions, "install", false)) {
     if (dmgs.length === 0) {
       fail("No DMG artifact found to install");
     }
@@ -414,7 +642,9 @@ function buildApp(options) {
         `Multiple DMGs found; install explicitly with install-dmg: ${dmgs.join(", ")}`,
       );
     }
-    installDmg(dmgs[0]);
+    installDmg(dmgs[0], {
+      quitRunning: boolOpt(resolvedOptions, "quit-running", false),
+    });
   }
 }
 
@@ -437,6 +667,7 @@ switch (command) {
   case "install-dmg":
     installDmg(requireOption(options, "dmg"), {
       dryRun: boolOpt(options, "dry-run", false),
+      quitRunning: boolOpt(options, "quit-running", false),
     });
     break;
   case "verify":

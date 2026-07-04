@@ -65,13 +65,14 @@ Use the helper script before spelling out long command sequences:
 
 ```bash
 node scripts/pake-ops.mjs build-app \
-  --url https://chatgpt.com/ \
-  --name "ChatGPT Pake" \
-  --app-version 1.0.1 \
-  --install
+  --preset chatgpt \
+  --app-version auto \
+  --install \
+  --quit-running
 
 node scripts/pake-ops.mjs install-dmg \
-  --dmg "artifacts/chatgpt-pake-28696551338/ChatGPT Pake-macOS/ChatGPT Pake.dmg"
+  --dmg "artifacts/chatgpt-pake-28696551338/ChatGPT Pake-macOS/ChatGPT Pake.dmg" \
+  --quit-running
 
 node scripts/pake-ops.mjs verify-download-fix
 ```
@@ -88,6 +89,19 @@ apps:
 - `multi_arch`: `true`
 - `macos_target`: `universal`
 - `force_internal_navigation`: `false`
+
+Shortcut options in `scripts/pake-ops.mjs` keep future turns shorter:
+
+- `--preset chatgpt` expands to `--url https://chatgpt.com/ --name "ChatGPT Pake"`.
+- `--preset amazon` expands to `--url https://www.amazon.co.jp/ --name "Amazon Pake"`.
+- `--app-version auto` reads the installed `/Applications/<App>.app` version
+  and bumps the patch version, e.g. `1.0.4` -> `1.0.5`.
+- `--quit-running` quits the target app before copying the new `.app` into
+  `/Applications`; without it, install fails if the app is running. Detection
+  checks the bundle executable as well as the display name, which catches
+  `pake-chatgptpake` for `ChatGPT Pake`.
+- `--dry-run` prints the planned GitHub workflow/install steps without
+  triggering a build.
 
 When the sandbox blocks network, GitHub, or `/Applications` work, request
 escalation directly for the narrow helper prefix:
