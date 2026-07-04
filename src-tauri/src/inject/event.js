@@ -441,6 +441,31 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.removeChild(anchor);
   }
 
+  async function downloadWithPageFetch(url, filename) {
+    try {
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error(
+          `Download request failed with status ${response.status}`,
+        );
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      triggerNativeDownload(objectUrl, filename);
+
+      setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+      }, 60000);
+    } catch (error) {
+      console.error(
+        "[Pake] Failed to fetch download with page credentials:",
+        error,
+      );
+      triggerNativeDownload(url, filename);
+    }
+  }
+
   // process special download protocol['data:','blob:']
   const isSpecialDownload = (url) =>
     ["blob", "data"].some((protocol) => url.startsWith(protocol));
@@ -560,10 +585,13 @@ document.addEventListener("DOMContentLoaded", () => {
           anchorElement.download ||
           isInternalUrl(absoluteUrl)
         ) {
-          triggerNativeDownload(
-            absoluteUrl,
-            anchorElement.download || getExplicitFilenameFromUrl(absoluteUrl),
-          );
+          const downloadName =
+            anchorElement.download || getExplicitFilenameFromUrl(absoluteUrl);
+          if (isSpecialDownload(absoluteUrl) || anchorElement.download) {
+            triggerNativeDownload(absoluteUrl, downloadName);
+          } else {
+            downloadWithPageFetch(absoluteUrl, downloadName);
+          }
           return;
         }
 
@@ -669,10 +697,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const absoluteUrl = hrefUrl.href;
 
       if (isDownloadableFile(absoluteUrl)) {
-        triggerNativeDownload(
-          absoluteUrl,
-          getExplicitFilenameFromUrl(absoluteUrl),
-        );
+        const downloadName = getExplicitFilenameFromUrl(absoluteUrl);
+        if (isSpecialDownload(absoluteUrl)) {
+          triggerNativeDownload(absoluteUrl, downloadName);
+        } else if (isInternalUrl(absoluteUrl)) {
+          downloadWithPageFetch(absoluteUrl, downloadName);
+        } else {
+          triggerNativeDownload(absoluteUrl, downloadName);
+        }
         return null;
       }
 

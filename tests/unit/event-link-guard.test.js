@@ -17,7 +17,28 @@ function loadEventHelpers({
     invokeCalls.push([command, payload]);
     return Promise.resolve();
   };
+  const fetchCalls = [];
+  const fetch = (url, options) => {
+    fetchCalls.push({ url, options });
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      blob: () => Promise.resolve({ url }),
+    });
+  };
   const nativeDownloadClicks = [];
+  const objectUrls = [];
+  function URLShim(...args) {
+    return new URL(...args);
+  }
+  Object.setPrototypeOf(URLShim, URL);
+  URLShim.prototype = URL.prototype;
+  URLShim.createObjectURL = (blob) => {
+    const objectUrl = `blob:pake-download-${objectUrls.length + 1}`;
+    objectUrls.push({ objectUrl, blob });
+    return objectUrl;
+  };
+  URLShim.revokeObjectURL = vi.fn();
   const eventListeners = {};
   const elementsById = new Map();
   const registerListener = (type, handler, options) => {
@@ -62,9 +83,10 @@ function loadEventHelpers({
 
   const context = {
     console,
-    URL,
+    URL: URLShim,
     Event: class {},
     Notification: function Notification() {},
+    fetch,
     setTimeout,
     clearTimeout,
     scrollTo: () => {},
@@ -118,7 +140,14 @@ function loadEventHelpers({
   }
 
   runInNewContext(source, context);
-  return { ...context, eventListeners, invokeCalls, nativeDownloadClicks };
+  return {
+    ...context,
+    eventListeners,
+    fetchCalls,
+    invokeCalls,
+    nativeDownloadClicks,
+    objectUrls,
+  };
 }
 
 function runDomReady(context) {
@@ -129,6 +158,14 @@ function getClickGuard(context) {
   return context.eventListeners.click.find(
     ({ handler }) => handler.name === "detectAnchorElementClick",
   ).handler;
+}
+
+async function flushAsyncDownloads() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 function makeAnchor(href, target = "_blank") {
@@ -275,7 +312,7 @@ describe("event link guard", () => {
     ).toBe(true);
   });
 
-  it("downloads target blank internal file links instead of navigating in-place", () => {
+  it("downloads target blank internal file links instead of navigating in-place", async () => {
     const context = loadEventHelpers({ withTauri: true });
     context.window.location.href = "https://chatgpt.com/c/123";
     context.window.location.origin = "https://chatgpt.com";
@@ -287,20 +324,27 @@ describe("event link guard", () => {
       makeAnchor("https://chatgpt.com/backend-api/files/report.md", "_blank"),
     );
     getClickGuard(context)(event);
+    await flushAsyncDownloads();
 
     expect(event.preventDefault).toHaveBeenCalled();
     expect(event.stopImmediatePropagation).toHaveBeenCalled();
     expect(context.window.location.href).toBe("https://chatgpt.com/c/123");
+    expect(context.fetchCalls).toEqual([
+      {
+        url: "https://chatgpt.com/backend-api/files/report.md",
+        options: { credentials: "include" },
+      },
+    ]);
     expect(context.invokeCalls).toEqual([]);
     expect(context.nativeDownloadClicks).toEqual([
       {
-        href: "https://chatgpt.com/backend-api/files/report.md",
+        href: "blob:pake-download-1",
         download: "report.md",
       },
     ]);
   });
 
-  it("downloads target blank ChatGPT attachment links with filenames in query params", () => {
+  it("downloads target blank ChatGPT attachment links with filenames in query params", async () => {
     const context = loadEventHelpers({ withTauri: true });
     context.window.location.href = "https://chatgpt.com/c/123";
     context.window.location.origin = "https://chatgpt.com";
@@ -312,20 +356,27 @@ describe("event link guard", () => {
       "https://chatgpt.com/backend-api/estuary/content?id=file_123&fn=even-g2-codex-setup.md&cd=attachment";
     const event = makeClickEvent(makeAnchor(url, "_blank"));
     getClickGuard(context)(event);
+    await flushAsyncDownloads();
 
     expect(event.preventDefault).toHaveBeenCalled();
     expect(event.stopImmediatePropagation).toHaveBeenCalled();
     expect(context.window.location.href).toBe("https://chatgpt.com/c/123");
+    expect(context.fetchCalls).toEqual([
+      {
+        url,
+        options: { credentials: "include" },
+      },
+    ]);
     expect(context.invokeCalls).toEqual([]);
     expect(context.nativeDownloadClicks).toEqual([
       {
-        href: url,
+        href: "blob:pake-download-1",
         download: "even-g2-codex-setup.md",
       },
     ]);
   });
 
-  it("downloads window.open ChatGPT attachment links instead of navigating in-place", () => {
+  it("downloads window.open ChatGPT attachment links instead of navigating in-place", async () => {
     const context = loadEventHelpers({ withTauri: true });
     context.window.location.href = "https://chatgpt.com/c/123";
     context.window.location.origin = "https://chatgpt.com";
@@ -336,12 +387,19 @@ describe("event link guard", () => {
     const url =
       "https://chatgpt.com/backend-api/estuary/content?id=file_123&fn=even-g2-codex-setup.md&cd=attachment";
     const result = context.window.open(url, "_blank");
+    await flushAsyncDownloads();
 
     expect(result).toBeNull();
     expect(context.window.location.href).toBe("https://chatgpt.com/c/123");
+    expect(context.fetchCalls).toEqual([
+      {
+        url,
+        options: { credentials: "include" },
+      },
+    ]);
     expect(context.nativeDownloadClicks).toEqual([
       {
-        href: url,
+        href: "blob:pake-download-1",
         download: "even-g2-codex-setup.md",
       },
     ]);
