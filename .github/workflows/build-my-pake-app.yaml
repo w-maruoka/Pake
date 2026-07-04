@@ -76,6 +76,11 @@ on:
         description: "Linux package formats, comma-separated: appimage, deb, rpm, zst"
         required: true
         default: "appimage"
+      force_internal_navigation:
+        description: "Keep clicked links inside the app instead of opening the browser"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -113,6 +118,7 @@ jobs:
           PAKE_MULTI_ARCH: ${{ inputs.multi_arch }}
           PAKE_MACOS_TARGET: ${{ inputs.macos_target }}
           PAKE_LINUX_TARGETS: ${{ inputs.linux_targets }}
+          PAKE_FORCE_INTERNAL_NAVIGATION: ${{ inputs.force_internal_navigation }}
         run: |
           set -euo pipefail
 
@@ -135,6 +141,10 @@ jobs:
 
           if [ "$PAKE_FULLSCREEN" = "true" ]; then
             args+=("--fullscreen")
+          fi
+
+          if [ "$PAKE_FORCE_INTERNAL_NAVIGATION" = "true" ]; then
+            args+=("--force-internal-navigation")
           fi
 
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -169,6 +179,7 @@ jobs:
           PAKE_APP_VERSION: ${{ inputs.app_version }}
           PAKE_FULLSCREEN: ${{ inputs.fullscreen }}
           PAKE_WINDOWS_TARGET: ${{ inputs.windows_target }}
+          PAKE_FORCE_INTERNAL_NAVIGATION: ${{ inputs.force_internal_navigation }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
@@ -192,6 +203,10 @@ jobs:
 
           if ($env:PAKE_FULLSCREEN -eq "true") {
             $argsList += "--fullscreen"
+          }
+
+          if ($env:PAKE_FORCE_INTERNAL_NAVIGATION -eq "true") {
+            $argsList += "--force-internal-navigation"
           }
 
           if ($env:PAKE_WINDOWS_TARGET -ne "auto") {
