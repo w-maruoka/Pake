@@ -63,6 +63,9 @@ const DOWNLOADABLE_FILE_EXTENSIONS = {
     "ppt",
     "pptx",
     "txt",
+    "md",
+    "markdown",
+    "mdx",
     "rtf",
     "odt",
     "ods",
@@ -213,6 +216,18 @@ function getExtension(url) {
     const pathname = new URL(url).pathname.toLowerCase();
     const extensionIndex = pathname.lastIndexOf(".");
     return extensionIndex > -1 ? pathname.slice(extensionIndex + 1) : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function getExplicitFilenameFromUrl(url) {
+  try {
+    const pathname = new URL(url).pathname;
+    const filename = decodeURIComponent(
+      pathname.substring(pathname.lastIndexOf("/") + 1),
+    );
+    return filename && filename.includes(".") ? filename : "";
   } catch (e) {
     return "";
   }
@@ -370,6 +385,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = filename || "";
+    anchor.dataset.pakeNativeDownload = "true";
     anchor.style.display = "none";
     document.body.appendChild(anchor);
     anchor.click();
@@ -443,6 +459,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const anchorElement = e.target.closest("a");
 
     if (anchorElement && anchorElement.href) {
+      if (anchorElement.dataset?.pakeNativeDownload === "true") {
+        return;
+      }
+
       const rawHref = anchorElement.getAttribute("href") || "";
       if (shouldBypassPakeLinkHandling(rawHref)) {
         return;
@@ -451,7 +471,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const target = anchorElement.target;
       const hrefUrl = new URL(anchorElement.href);
       const absoluteUrl = hrefUrl.href;
-      let filename = anchorElement.download || getFilenameFromUrl(absoluteUrl);
+      let filename =
+        anchorElement.download ||
+        getExplicitFilenameFromUrl(absoluteUrl) ||
+        getFilenameFromUrl(absoluteUrl);
 
       // Keep OAuth/authentication flows inside the app. Without --new-window,
       // navigate in place so the SSO redirect chain and callback stay in the
@@ -472,6 +495,33 @@ document.addEventListener("DOMContentLoaded", () => {
           window.location.href = absoluteUrl;
         }
 
+        return;
+      }
+
+      // Process download links before target handling. Some apps, including
+      // ChatGPT, expose generated files as same-domain target=_blank links; if
+      // target handling runs first, text formats such as Markdown navigate in
+      // the Pake window instead of saving to Downloads.
+      if (isDownloadRequired(absoluteUrl, anchorElement, e)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        if (
+          isSpecialDownload(absoluteUrl) ||
+          anchorElement.download ||
+          isInternalUrl(absoluteUrl)
+        ) {
+          triggerNativeDownload(
+            absoluteUrl,
+            anchorElement.download || getExplicitFilenameFromUrl(absoluteUrl),
+          );
+          return;
+        }
+
+        const userLanguage = getUserLanguage();
+        invoke("download_file", {
+          params: { url: absoluteUrl, filename, language: userLanguage },
+        });
         return;
       }
 
@@ -513,25 +563,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         e.preventDefault();
         handleExternalLink(absoluteUrl);
-        return;
-      }
-
-      // Process download links.
-      if (isDownloadRequired(absoluteUrl, anchorElement, e)) {
-        // Let the browser download blob:/data: URLs natively; the Rust
-        // on_download handler saves them to the Downloads folder. Routing them
-        // through the IPC fails on strict-CSP sites (e.g. Gemini), whose
-        // connect-src blocks the IPC origin, and on downloads triggered from a
-        // sandboxed iframe where the IPC can't be reached.
-        if (isSpecialDownload(absoluteUrl)) {
-          return;
-        }
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        const userLanguage = getUserLanguage();
-        invoke("download_file", {
-          params: { url: absoluteUrl, filename, language: userLanguage },
-        });
         return;
       }
 

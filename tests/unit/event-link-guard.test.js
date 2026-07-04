@@ -17,34 +17,46 @@ function loadEventHelpers({
     invokeCalls.push([command, payload]);
     return Promise.resolve();
   };
+  const nativeDownloadClicks = [];
   const eventListeners = {};
   const elementsById = new Map();
   const registerListener = (type, handler, options) => {
     eventListeners[type] = eventListeners[type] || [];
     eventListeners[type].push({ handler, options });
   };
-  const createElement = (tagName = "div") => ({
-    tagName: tagName.toUpperCase(),
-    style: {},
-    children: [],
-    addEventListener: () => {},
-    appendChild(child) {
-      this.children.push(child);
-      if (child.id) elementsById.set(child.id, child);
-    },
-    removeChild(child) {
-      this.children = this.children.filter((item) => item !== child);
-      if (child.id) elementsById.delete(child.id);
-    },
-    click: () => {},
-    set id(value) {
-      this._id = value;
-      elementsById.set(value, this);
-    },
-    get id() {
-      return this._id;
-    },
-  });
+  const createElement = (tagName = "div") => {
+    const element = {
+      tagName: tagName.toUpperCase(),
+      style: {},
+      children: [],
+      dataset: {},
+      addEventListener: () => {},
+      appendChild(child) {
+        this.children.push(child);
+        if (child.id) elementsById.set(child.id, child);
+      },
+      removeChild(child) {
+        this.children = this.children.filter((item) => item !== child);
+        if (child.id) elementsById.delete(child.id);
+      },
+      click: () => {
+        if (element.dataset.pakeNativeDownload === "true") {
+          nativeDownloadClicks.push({
+            href: element.href,
+            download: element.download,
+          });
+        }
+      },
+      set id(value) {
+        this._id = value;
+        elementsById.set(value, this);
+      },
+      get id() {
+        return this._id;
+      },
+    };
+    return element;
+  };
   const body = createElement("body");
   body.scrollHeight = 0;
 
@@ -106,7 +118,7 @@ function loadEventHelpers({
   }
 
   runInNewContext(source, context);
-  return { ...context, eventListeners, invokeCalls };
+  return { ...context, eventListeners, invokeCalls, nativeDownloadClicks };
 }
 
 function runDomReady(context) {
@@ -244,6 +256,43 @@ describe("event link guard", () => {
     expect(context.window.location.href).toBe(
       "https://app.example.com/callback",
     );
+  });
+
+  it("treats Markdown files as downloadable files", () => {
+    const { isDownloadableFile } = loadEventHelpers();
+
+    expect(isDownloadableFile("https://example.com/files/notes.md")).toBe(true);
+    expect(isDownloadableFile("https://example.com/files/notes.markdown")).toBe(
+      true,
+    );
+    expect(isDownloadableFile("https://example.com/files/component.mdx")).toBe(
+      true,
+    );
+  });
+
+  it("downloads target blank internal file links instead of navigating in-place", () => {
+    const context = loadEventHelpers({ withTauri: true });
+    context.window.location.href = "https://chatgpt.com/c/123";
+    context.window.location.origin = "https://chatgpt.com";
+    context.window.location.pathname = "/c/123";
+    context.window.pakeConfig = { new_window: false };
+    runDomReady(context);
+
+    const event = makeClickEvent(
+      makeAnchor("https://chatgpt.com/backend-api/files/report.md", "_blank"),
+    );
+    getClickGuard(context)(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopImmediatePropagation).toHaveBeenCalled();
+    expect(context.window.location.href).toBe("https://chatgpt.com/c/123");
+    expect(context.invokeCalls).toEqual([]);
+    expect(context.nativeDownloadClicks).toEqual([
+      {
+        href: "https://chatgpt.com/backend-api/files/report.md",
+        download: "report.md",
+      },
+    ]);
   });
 
   it("bridges Web Badging API calls to explicit badge commands", async () => {
