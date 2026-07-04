@@ -336,6 +336,7 @@ fn build_window(
     })?;
 
     let user_agent = config.user_agent.get();
+    let is_chatgpt_profile = window_config.performance_profile == "chatgpt";
 
     let config_script = format!(
         "window.pakeConfig = {}",
@@ -440,10 +441,19 @@ fn build_window(
 
     window_builder = window_builder
         .initialization_script(include_str!("../inject/toast.js"))
-        .initialization_script(include_str!("../inject/fullscreen.js"))
-        .initialization_script(include_str!("../inject/event.js"))
-        .initialization_script(include_str!("../inject/style.js"))
-        .initialization_script(include_str!("../inject/theme_refresh.js"))
+        .initialization_script(include_str!("../inject/event.js"));
+
+    if is_chatgpt_profile {
+        window_builder =
+            window_builder.initialization_script(include_str!("../inject/chatgpt_style.js"));
+    } else {
+        window_builder = window_builder
+            .initialization_script(include_str!("../inject/fullscreen.js"))
+            .initialization_script(include_str!("../inject/style.js"))
+            .initialization_script(include_str!("../inject/theme_refresh.js"));
+    }
+
+    window_builder = window_builder
         .initialization_script(include_str!("../inject/auth.js"))
         .initialization_script(include_str!("../inject/custom.js"));
 

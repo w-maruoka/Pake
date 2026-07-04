@@ -92,6 +92,16 @@ describe('CLI options', () => {
     expect(option?.hidden).toBe(true);
   });
 
+  it('registers hidden --performance-profile option', () => {
+    const option = program.options.find(
+      (item) => item.long === '--performance-profile',
+    );
+
+    expect(option).toBeDefined();
+    expect(option?.defaultValue).toBe('default');
+    expect(option?.hidden).toBe(true);
+  });
+
   it('rejects malformed zoom values instead of truncating them', () => {
     const option = program.options.find((item) => item.long === '--zoom');
 

@@ -15,6 +15,7 @@ const appPresets = {
   chatgpt: {
     url: "https://chatgpt.com/",
     name: "ChatGPT Pake",
+    "performance-profile": "chatgpt",
   },
   amazon: {
     url: "https://www.amazon.co.jp/",
@@ -54,11 +55,13 @@ Commands:
       --preset chatgpt|amazon   Fill --url and --name for common personal apps.
       --app-version auto        Bump the installed app's patch version.
       --quit-running            Quit the app before installing the new DMG.
+      --performance-profile     Runtime profile: default or chatgpt.
       --dry-run                 Print the planned workflow/install commands only.
 
     Useful examples:
       node scripts/pake-ops.mjs build-app --url https://chatgpt.com/ --name "ChatGPT Pake" --app-version 1.0.1 --install
       node scripts/pake-ops.mjs build-app --preset chatgpt --app-version auto --install --quit-running
+      node scripts/pake-ops.mjs build-app --preset chatgpt --performance-profile default --dry-run
       node scripts/pake-ops.mjs build-app --url https://www.amazon.co.jp/ --name "Amazon Pake" --install
       node scripts/pake-ops.mjs build-app --run-id 28696551338 --name "ChatGPT Pake" --install
 
@@ -569,6 +572,11 @@ function buildApp(options) {
       macos_target: opt(resolvedOptions, "macos-target", "universal"),
       windows_target: opt(resolvedOptions, "windows-target", "x64"),
       linux_targets: opt(resolvedOptions, "linux-targets", "appimage"),
+      performance_profile: opt(
+        resolvedOptions,
+        "performance-profile",
+        "default",
+      ),
       force_internal_navigation: boolOpt(
         resolvedOptions,
         "force-internal-navigation",

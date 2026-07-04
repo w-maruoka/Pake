@@ -54,6 +54,7 @@ export const DEFAULT_PAKE_OPTIONS: PakeCliOptions = {
   minHeight: 0,
   ignoreCertificateErrors: false,
   newWindow: false,
+  performanceProfile: 'default',
   install: false,
   camera: false,
   microphone: false,

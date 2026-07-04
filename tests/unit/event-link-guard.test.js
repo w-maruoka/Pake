@@ -353,12 +353,38 @@ describe("event link guard", () => {
     expect(context.nativeDownloadClicks).toEqual([]);
   });
 
+  it("lets ChatGPT conversation links use native navigation in the ChatGPT performance profile", () => {
+    const context = loadEventHelpers({ withTauri: true });
+    context.window.location.href = "https://chatgpt.com/";
+    context.window.location.origin = "https://chatgpt.com";
+    context.window.location.pathname = "/";
+    context.window.pakeConfig = {
+      new_window: false,
+      performance_profile: "chatgpt",
+    };
+    runDomReady(context);
+
+    const event = makeClickEvent(
+      makeAnchor("https://chatgpt.com/c/6a48918a-b6e4-83ee-93d5", ""),
+    );
+    getClickGuard(context)(event);
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(event.stopImmediatePropagation).not.toHaveBeenCalled();
+    expect(context.fetchCalls).toEqual([]);
+    expect(context.invokeCalls).toEqual([]);
+    expect(context.window.location.href).toBe("https://chatgpt.com/");
+  });
+
   it("downloads target blank ChatGPT attachment links with filenames in query params", async () => {
     const context = loadEventHelpers({ withTauri: true });
     context.window.location.href = "https://chatgpt.com/c/123";
     context.window.location.origin = "https://chatgpt.com";
     context.window.location.pathname = "/c/123";
-    context.window.pakeConfig = { new_window: false };
+    context.window.pakeConfig = {
+      new_window: false,
+      performance_profile: "chatgpt",
+    };
     runDomReady(context);
 
     const url =
@@ -396,7 +422,10 @@ describe("event link guard", () => {
     context.window.location.href = "https://chatgpt.com/c/123";
     context.window.location.origin = "https://chatgpt.com";
     context.window.location.pathname = "/c/123";
-    context.window.pakeConfig = { new_window: false };
+    context.window.pakeConfig = {
+      new_window: false,
+      performance_profile: "chatgpt",
+    };
     runDomReady(context);
 
     const url =

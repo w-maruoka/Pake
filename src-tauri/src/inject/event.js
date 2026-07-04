@@ -363,6 +363,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const invoke = tauri.core.invoke;
   const pakeConfig = window["pakeConfig"] || {};
   const forceInternalNavigation = pakeConfig.force_internal_navigation === true;
+  const isChatGptPerformanceProfile =
+    pakeConfig.performance_profile === "chatgpt";
   const internalUrlRegex = pakeConfig.internal_url_regex || "";
   let internalUrlPattern = null;
   if (internalUrlRegex) {
@@ -555,6 +557,31 @@ document.addEventListener("DOMContentLoaded", () => {
     return isSameDomain(url);
   };
 
+  const shouldUseNativeChatGptNavigation = (anchorElement, event, target) => {
+    if (!isChatGptPerformanceProfile) {
+      return false;
+    }
+
+    if (
+      anchorElement.download ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      target === "_blank" ||
+      target === "_new"
+    ) {
+      return false;
+    }
+
+    try {
+      const url = new URL(anchorElement.href);
+      return url.hostname === "chatgpt.com" && url.pathname.startsWith("/c/");
+    } catch (_) {
+      return false;
+    }
+  };
+
   const detectAnchorElementClick = (e) => {
     // Safety check: ensure e.target exists and is an Element with closest method
     if (!e.target || typeof e.target.closest !== "function") {
@@ -573,6 +600,10 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       const target = anchorElement.target;
+      if (shouldUseNativeChatGptNavigation(anchorElement, e, target)) {
+        return;
+      }
+
       const hrefUrl = new URL(anchorElement.href);
       const absoluteUrl = hrefUrl.href;
       let filename =
@@ -1069,53 +1100,55 @@ document.addEventListener("DOMContentLoaded", () => {
     return items;
   }
 
-  // Handle right-click context menu
-  document.addEventListener(
-    "contextmenu",
-    function (event) {
-      const target = event.target;
+  if (!isChatGptPerformanceProfile) {
+    // Handle right-click context menu
+    document.addEventListener(
+      "contextmenu",
+      function (event) {
+        const target = event.target;
 
-      // Check for media elements (images/videos)
-      const mediaInfo = getMediaInfo(target);
+        // Check for media elements (images/videos)
+        const mediaInfo = getMediaInfo(target);
 
-      // Check for links (but not if it's media)
-      const linkElement =
-        target && typeof target.closest === "function"
-          ? target.closest("a")
-          : null;
-      const isLink = linkElement && linkElement.href && !mediaInfo.isMedia;
+        // Check for links (but not if it's media)
+        const linkElement =
+          target && typeof target.closest === "function"
+            ? target.closest("a")
+            : null;
+        const isLink = linkElement && linkElement.href && !mediaInfo.isMedia;
 
-      // Only show custom menu for media or links
-      if (mediaInfo.isMedia || isLink) {
-        event.preventDefault();
-        event.stopPropagation();
+        // Only show custom menu for media or links
+        if (mediaInfo.isMedia || isLink) {
+          event.preventDefault();
+          event.stopPropagation();
 
-        let menuItems = [];
+          let menuItems = [];
 
-        if (mediaInfo.isMedia) {
-          menuItems = buildMenuItems("media", mediaInfo);
-        } else if (isLink) {
-          const linkUrl = linkElement.href;
-          menuItems = buildMenuItems("link", {
-            url: linkUrl,
-            isFile: isDownloadableFile(linkUrl),
-          });
+          if (mediaInfo.isMedia) {
+            menuItems = buildMenuItems("media", mediaInfo);
+          } else if (isLink) {
+            const linkUrl = linkElement.href;
+            menuItems = buildMenuItems("link", {
+              url: linkUrl,
+              isFile: isDownloadableFile(linkUrl),
+            });
+          }
+
+          showContextMenu(event.clientX, event.clientY, menuItems);
         }
+        // For all other elements, let browser's default context menu handle it
+      },
+      true,
+    );
 
-        showContextMenu(event.clientX, event.clientY, menuItems);
+    // Hide context menu when clicking elsewhere
+    document.addEventListener("click", hideContextMenu);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        hideContextMenu();
       }
-      // For all other elements, let browser's default context menu handle it
-    },
-    true,
-  );
-
-  // Hide context menu when clicking elsewhere
-  document.addEventListener("click", hideContextMenu);
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      hideContextMenu();
-    }
-  });
+    });
+  }
 });
 
 // Bridge the Web Notification + Web Badging APIs to Pake's Rust commands so

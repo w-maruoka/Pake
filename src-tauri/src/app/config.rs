@@ -36,10 +36,16 @@ pub struct WindowConfig {
     pub min_height: f64,
     #[serde(default)]
     pub ignore_certificate_errors: bool,
+    #[serde(default = "default_performance_profile")]
+    pub performance_profile: String,
 }
 
 fn default_zoom() -> u32 {
     100
+}
+
+fn default_performance_profile() -> String {
+    "default".to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

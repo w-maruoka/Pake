@@ -270,6 +270,15 @@ ${green('|_|   \\__,_|_|\\_\\___|  can turn any webpage into a desktop app with 
     )
     .addOption(
       new Option(
+        '--performance-profile <profile>',
+        'Runtime performance profile',
+      )
+        .choices(['default', 'chatgpt'])
+        .default(DEFAULT.performanceProfile)
+        .hideHelp(),
+    )
+    .addOption(
+      new Option(
         '--install',
         'Auto-install app to /Applications (macOS) after build and remove local bundle',
       )

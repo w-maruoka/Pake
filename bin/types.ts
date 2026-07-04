@@ -136,6 +136,9 @@ export interface PakeCliOptions {
   // Allow sites to open new windows, default false
   newWindow: boolean;
 
+  // Runtime performance profile, default default
+  performanceProfile: 'default' | 'chatgpt';
+
   // Auto-install app to /Applications (macOS) after build, default false
   install: boolean;
 
@@ -183,6 +186,7 @@ export interface WindowConfig {
   min_height: number;
   ignore_certificate_errors: boolean;
   new_window: boolean;
+  performance_profile: 'default' | 'chatgpt';
 }
 
 export interface PakeConfig {

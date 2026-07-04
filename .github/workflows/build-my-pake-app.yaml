@@ -81,6 +81,14 @@ on:
         required: true
         default: false
         type: boolean
+      performance_profile:
+        description: "Runtime performance profile"
+        required: true
+        default: "default"
+        type: choice
+        options:
+          - "default"
+          - "chatgpt"
 
 permissions:
   contents: read
@@ -119,6 +127,7 @@ jobs:
           PAKE_MACOS_TARGET: ${{ inputs.macos_target }}
           PAKE_LINUX_TARGETS: ${{ inputs.linux_targets }}
           PAKE_FORCE_INTERNAL_NAVIGATION: ${{ inputs.force_internal_navigation }}
+          PAKE_PERFORMANCE_PROFILE: ${{ inputs.performance_profile }}
         run: |
           set -euo pipefail
 
@@ -145,6 +154,10 @@ jobs:
 
           if [ "$PAKE_FORCE_INTERNAL_NAVIGATION" = "true" ]; then
             args+=("--force-internal-navigation")
+          fi
+
+          if [ "$PAKE_PERFORMANCE_PROFILE" != "default" ]; then
+            args+=("--performance-profile" "$PAKE_PERFORMANCE_PROFILE")
           fi
 
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -180,6 +193,7 @@ jobs:
           PAKE_FULLSCREEN: ${{ inputs.fullscreen }}
           PAKE_WINDOWS_TARGET: ${{ inputs.windows_target }}
           PAKE_FORCE_INTERNAL_NAVIGATION: ${{ inputs.force_internal_navigation }}
+          PAKE_PERFORMANCE_PROFILE: ${{ inputs.performance_profile }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
@@ -207,6 +221,10 @@ jobs:
 
           if ($env:PAKE_FORCE_INTERNAL_NAVIGATION -eq "true") {
             $argsList += "--force-internal-navigation"
+          }
+
+          if ($env:PAKE_PERFORMANCE_PROFILE -ne "default") {
+            $argsList += @("--performance-profile", $env:PAKE_PERFORMANCE_PROFILE)
           }
 
           if ($env:PAKE_WINDOWS_TARGET -ne "auto") {

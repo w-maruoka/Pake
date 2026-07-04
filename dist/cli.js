@@ -544,6 +544,7 @@ function buildWindowConfigOverrides(options, platform = asSupportedPlatform(proc
         min_height: options.minHeight,
         ignore_certificate_errors: options.ignoreCertificateErrors,
         new_window: options.newWindow,
+        performance_profile: options.performanceProfile,
     };
 }
 function asSupportedPlatform(platform) {
@@ -2765,6 +2766,7 @@ const DEFAULT_PAKE_OPTIONS = {
     minHeight: 0,
     ignoreCertificateErrors: false,
     newWindow: false,
+    performanceProfile: 'default',
     install: false,
     camera: false,
     microphone: false,
@@ -2936,6 +2938,10 @@ ${green('|_|   \\__,_|_|\\_\\___|  can turn any webpage into a desktop app with 
         .default(DEFAULT_PAKE_OPTIONS.iterativeBuild)
         .hideHelp())
         .addOption(new Option('--new-window', 'Allow sites to open new windows (for auth flows, tabs, branches)').default(DEFAULT_PAKE_OPTIONS.newWindow))
+        .addOption(new Option('--performance-profile <profile>', 'Runtime performance profile')
+        .choices(['default', 'chatgpt'])
+        .default(DEFAULT_PAKE_OPTIONS.performanceProfile)
+        .hideHelp())
         .addOption(new Option('--install', 'Auto-install app to /Applications (macOS) after build and remove local bundle')
         .default(DEFAULT_PAKE_OPTIONS.install)
         .hideHelp())
