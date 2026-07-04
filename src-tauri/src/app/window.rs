@@ -76,6 +76,144 @@ struct WindowBuildOptions<'a> {
     new_window_features: Option<NewWindowFeatures>,
 }
 
+const DOWNLOAD_FILENAME_QUERY_PARAMS: &[&str] = &["filename", "fileName", "file_name", "fn", "name"];
+
+const DOWNLOAD_DISPOSITION_QUERY_PARAMS: &[&str] = &[
+    "cd",
+    "content-disposition",
+    "content_disposition",
+    "response-content-disposition",
+    "response_content_disposition",
+    "disposition",
+];
+
+const DOWNLOADABLE_EXTENSIONS: &[&str] = &[
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "markdown", "mdx", "rtf",
+    "odt", "ods", "odp", "pages", "numbers", "key", "epub", "mobi", "zip", "rar", "7z", "tar",
+    "gz", "gzip", "bz2", "xz", "lzma", "deb", "rpm", "pkg", "msi", "exe", "dmg", "apk", "ipa",
+    "json", "xml", "csv", "sql", "db", "sqlite", "yaml", "yml", "toml", "ini", "cfg", "conf",
+    "log", "js", "ts", "jsx", "tsx", "css", "scss", "sass", "less", "sh", "bat", "ps1", "ttf",
+    "otf", "woff", "woff2", "eot", "ai", "psd", "sketch", "fig", "xd", "iso", "img", "bin",
+    "torrent", "jar", "war", "indd", "fla", "swf", "raw",
+];
+
+const PREVIEWABLE_MEDIA_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "tif", "avif", "heic", "heif",
+    "mp4", "webm", "mov", "m4v", "mkv", "avi", "ogv", "mp3", "wav", "ogg", "flac", "aac",
+    "m4a",
+];
+
+fn filename_from_path_value(value: &str) -> Option<String> {
+    let candidate = value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("")
+        .trim();
+
+    if candidate.contains('.') && !candidate.starts_with('.') && !candidate.ends_with('.') {
+        Some(candidate.to_string())
+    } else {
+        None
+    }
+}
+
+fn filename_from_content_disposition(value: &str) -> Option<String> {
+    value.split(';').find_map(|part| {
+        let (key, raw_value) = part.split_once('=')?;
+        let key = key.trim().trim_end_matches('*');
+        if key.eq_ignore_ascii_case("filename") {
+            filename_from_path_value(raw_value)
+        } else {
+            None
+        }
+    })
+}
+
+fn explicit_filename_from_url(url: &Url) -> Option<String> {
+    if let Some(filename) = filename_from_path_value(url.path()) {
+        return Some(filename);
+    }
+
+    for (key, value) in url.query_pairs() {
+        if DOWNLOAD_FILENAME_QUERY_PARAMS
+            .iter()
+            .any(|param| key.eq_ignore_ascii_case(param))
+        {
+            if let Some(filename) = filename_from_path_value(&value) {
+                return Some(filename);
+            }
+        }
+
+        if DOWNLOAD_DISPOSITION_QUERY_PARAMS
+            .iter()
+            .any(|param| key.eq_ignore_ascii_case(param))
+        {
+            if let Some(filename) = filename_from_content_disposition(&value) {
+                return Some(filename);
+            }
+        }
+    }
+
+    None
+}
+
+fn extension_from_filename(filename: &str) -> Option<String> {
+    filename
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .filter(|extension| !extension.is_empty())
+}
+
+fn has_attachment_disposition(url: &Url) -> bool {
+    url.query_pairs().any(|(key, value)| {
+        DOWNLOAD_DISPOSITION_QUERY_PARAMS
+            .iter()
+            .any(|param| key.eq_ignore_ascii_case(param))
+            && value.to_ascii_lowercase().contains("attachment")
+    })
+}
+
+fn download_filename_for_navigation(url: &Url) -> Option<String> {
+    let filename = explicit_filename_from_url(url)?;
+    let extension = extension_from_filename(&filename)?;
+
+    if PREVIEWABLE_MEDIA_EXTENSIONS.contains(&extension.as_str()) {
+        return None;
+    }
+
+    if DOWNLOADABLE_EXTENSIONS.contains(&extension.as_str())
+        || has_attachment_disposition(url)
+        || url.query_pairs().any(|(key, _)| {
+            key.eq_ignore_ascii_case("download") || key.eq_ignore_ascii_case("attachment")
+        })
+    {
+        Some(filename)
+    } else {
+        None
+    }
+}
+
+fn build_page_download_script(url: &Url, filename: &str) -> Option<String> {
+    let url_json = serde_json::to_string(url.as_str()).ok()?;
+    let filename_json = serde_json::to_string(filename).ok()?;
+
+    Some(format!(
+        "(() => {{
+  const url = {url_json};
+  const filename = {filename_json};
+  if (typeof window.__PAKE_DOWNLOAD_URL === 'function') {{
+    window.__PAKE_DOWNLOAD_URL(url, filename);
+  }} else {{
+    window.__PAKE_PENDING_DOWNLOADS = window.__PAKE_PENDING_DOWNLOADS || [];
+    window.__PAKE_PENDING_DOWNLOADS.push({{ url, filename }});
+  }}
+}})();"
+    ))
+}
+
 fn open_requested_window(
     app: &AppHandle,
     config: &PakeConfig,
@@ -495,7 +633,25 @@ fn build_window(
         });
     }
 
-    window_builder = window_builder.on_navigation(|_| true);
+    {
+        let navigation_handle = app.clone();
+        let navigation_window_label = label.to_string();
+        window_builder = window_builder.on_navigation(move |url| {
+            let Some(filename) = download_filename_for_navigation(&url) else {
+                return true;
+            };
+
+            if let Some(window) = navigation_handle.get_webview_window(&navigation_window_label) {
+                if let Some(script) = build_page_download_script(&url, &filename) {
+                    if let Err(error) = window.eval(&script) {
+                        eprintln!("[Pake] Failed to dispatch download navigation: {error}");
+                    }
+                }
+            }
+
+            false
+        });
+    }
 
     window_builder.build()
 }

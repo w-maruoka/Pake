@@ -441,6 +441,18 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.removeChild(anchor);
   }
 
+  async function saveBlobWithTauri(blob, filename) {
+    const buffer = await blob.arrayBuffer();
+    const bytes = Array.from(new Uint8Array(buffer));
+    await invoke("save_downloaded_file", {
+      params: {
+        filename: filename || "download",
+        bytes,
+        language: getUserLanguage(),
+      },
+    });
+  }
+
   async function downloadWithPageFetch(url, filename) {
     try {
       const response = await fetch(url, { credentials: "include" });
@@ -451,18 +463,36 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      triggerNativeDownload(objectUrl, filename);
+      try {
+        await saveBlobWithTauri(blob, filename || getFilenameFromUrl(url));
+      } catch (saveError) {
+        console.error(
+          "[Pake] Failed to save download through Tauri:",
+          saveError,
+        );
+        const objectUrl = URL.createObjectURL(blob);
+        triggerNativeDownload(objectUrl, filename);
 
-      setTimeout(() => {
-        URL.revokeObjectURL(objectUrl);
-      }, 60000);
+        setTimeout(() => {
+          URL.revokeObjectURL(objectUrl);
+        }, 60000);
+      }
     } catch (error) {
       console.error(
         "[Pake] Failed to fetch download with page credentials:",
         error,
       );
       triggerNativeDownload(url, filename);
+    }
+  }
+
+  window.__PAKE_DOWNLOAD_URL = (url, filename) =>
+    downloadWithPageFetch(url, filename);
+
+  if (Array.isArray(window.__PAKE_PENDING_DOWNLOADS)) {
+    const pendingDownloads = window.__PAKE_PENDING_DOWNLOADS.splice(0);
+    for (const pendingDownload of pendingDownloads) {
+      downloadWithPageFetch(pendingDownload.url, pendingDownload.filename);
     }
   }
 

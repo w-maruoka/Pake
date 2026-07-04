@@ -76,6 +76,13 @@ pub struct DownloadFileParams {
 }
 
 #[derive(serde::Deserialize)]
+pub struct SaveDownloadedFileParams {
+    filename: String,
+    bytes: Vec<u8>,
+    language: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
 pub struct NotificationParams {
     title: String,
     body: String,
@@ -140,6 +147,53 @@ pub async fn download_file(app: AppHandle, params: DownloadFileParams) -> Result
             Err(e.to_string())
         }
     }
+}
+
+#[command]
+pub async fn save_downloaded_file(
+    app: AppHandle,
+    params: SaveDownloadedFileParams,
+) -> Result<(), String> {
+    let window: WebviewWindow = app.get_webview_window("pake").ok_or("Window not found")?;
+
+    show_toast(
+        &window,
+        &get_download_message_with_lang(MessageType::Start, params.language.clone()),
+    );
+
+    let download_dir = app
+        .path()
+        .download_dir()
+        .map_err(|e| format!("Failed to get download dir: {}", e))?;
+
+    let output_path = download_dir.join(sanitize_download_filename(&params.filename));
+
+    let path_str = output_path.to_str().ok_or("Invalid output path")?;
+
+    let file_path = check_file_or_append(path_str);
+
+    let mut file = File::create(file_path).map_err(|e| {
+        show_toast(
+            &window,
+            &get_download_message_with_lang(MessageType::Failure, params.language.clone()),
+        );
+        format!("Failed to create file: {}", e)
+    })?;
+
+    file.write_all(&params.bytes).map_err(|e| {
+        show_toast(
+            &window,
+            &get_download_message_with_lang(MessageType::Failure, params.language.clone()),
+        );
+        format!("Failed to write file: {}", e)
+    })?;
+
+    show_toast(
+        &window,
+        &get_download_message_with_lang(MessageType::Success, params.language.clone()),
+    );
+
+    Ok(())
 }
 
 #[command]

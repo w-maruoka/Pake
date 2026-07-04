@@ -23,7 +23,12 @@ function loadEventHelpers({
     return Promise.resolve({
       ok: true,
       status: 200,
-      blob: () => Promise.resolve({ url }),
+      blob: () =>
+        Promise.resolve({
+          url,
+          arrayBuffer: () =>
+            Promise.resolve(new Uint8Array([80, 65, 75, 69]).buffer),
+        }),
     });
   };
   const nativeDownloadClicks = [];
@@ -161,11 +166,9 @@ function getClickGuard(context) {
 }
 
 async function flushAsyncDownloads() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 20; i += 1) {
+    await Promise.resolve();
+  }
 }
 
 function makeAnchor(href, target = "_blank") {
@@ -335,13 +338,19 @@ describe("event link guard", () => {
         options: { credentials: "include" },
       },
     ]);
-    expect(context.invokeCalls).toEqual([]);
-    expect(context.nativeDownloadClicks).toEqual([
-      {
-        href: "blob:pake-download-1",
-        download: "report.md",
-      },
+    expect(context.invokeCalls).toEqual([
+      [
+        "save_downloaded_file",
+        {
+          params: {
+            filename: "report.md",
+            bytes: [80, 65, 75, 69],
+            language: "en-US",
+          },
+        },
+      ],
     ]);
+    expect(context.nativeDownloadClicks).toEqual([]);
   });
 
   it("downloads target blank ChatGPT attachment links with filenames in query params", async () => {
@@ -367,13 +376,19 @@ describe("event link guard", () => {
         options: { credentials: "include" },
       },
     ]);
-    expect(context.invokeCalls).toEqual([]);
-    expect(context.nativeDownloadClicks).toEqual([
-      {
-        href: "blob:pake-download-1",
-        download: "even-g2-codex-setup.md",
-      },
+    expect(context.invokeCalls).toEqual([
+      [
+        "save_downloaded_file",
+        {
+          params: {
+            filename: "even-g2-codex-setup.md",
+            bytes: [80, 65, 75, 69],
+            language: "en-US",
+          },
+        },
+      ],
     ]);
+    expect(context.nativeDownloadClicks).toEqual([]);
   });
 
   it("downloads window.open ChatGPT attachment links instead of navigating in-place", async () => {
@@ -397,12 +412,19 @@ describe("event link guard", () => {
         options: { credentials: "include" },
       },
     ]);
-    expect(context.nativeDownloadClicks).toEqual([
-      {
-        href: "blob:pake-download-1",
-        download: "even-g2-codex-setup.md",
-      },
+    expect(context.invokeCalls).toEqual([
+      [
+        "save_downloaded_file",
+        {
+          params: {
+            filename: "even-g2-codex-setup.md",
+            bytes: [80, 65, 75, 69],
+            language: "en-US",
+          },
+        },
+      ],
     ]);
+    expect(context.nativeDownloadClicks).toEqual([]);
   });
 
   it("bridges Web Badging API calls to explicit badge commands", async () => {
