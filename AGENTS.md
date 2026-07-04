@@ -55,6 +55,83 @@ Pake/
 
 Keep shared project facts in this file so Codex, Claude Code, and other agents use the same source of truth. `CLAUDE.md` is a symlink to this file, so edit `AGENTS.md` only. Local-only overrides (`CLAUDE.local.md`, `AGENTS.override.md`, `.claude/settings.local.json`) stay ignored.
 
+## Personal Pake Automation
+
+The user's recurring personal workflow is to build Pake apps through the
+`Build My Pake App` GitHub Actions workflow in `w-maruoka/Pake`, download the
+artifact, validate the DMG, and install the `.app` into `/Applications`.
+
+Use the helper script before spelling out long command sequences:
+
+```bash
+node scripts/pake-ops.mjs build-app \
+  --url https://chatgpt.com/ \
+  --name "ChatGPT Pake" \
+  --app-version 1.0.1 \
+  --install
+
+node scripts/pake-ops.mjs install-dmg \
+  --dmg "artifacts/chatgpt-pake-28696551338/ChatGPT Pake-macOS/ChatGPT Pake.dmg"
+
+node scripts/pake-ops.mjs verify-download-fix
+```
+
+Default build values are intentionally aligned with the user's macOS personal
+apps:
+
+- repo: `w-maruoka/Pake`
+- workflow: `Build My Pake App`
+- ref: `main`
+- platform: `macos-latest`
+- width/height: `1200` x `800`
+- `hide_title_bar`: `true`
+- `multi_arch`: `true`
+- `macos_target`: `universal`
+- `force_internal_navigation`: `false`
+
+When the sandbox blocks network, GitHub, or `/Applications` work, request
+escalation directly for the narrow helper prefix:
+
+```text
+["node", "scripts/pake-ops.mjs"]
+```
+
+This is preferable to asking the user repeatedly for separate `gh`,
+`hdiutil`, `ditto`, `defaults`, and `npx pnpm@10.26.2` approvals. If using
+direct commands is necessary, the previously approved command families for
+this user include:
+
+- GitHub workflow work: `gh workflow list`, `gh workflow run`, `gh run watch`,
+  `gh run view`, `gh run download`
+- Local verification: `npx pnpm@10.26.2 install --frozen-lockfile`,
+  `npx pnpm@10.26.2 exec vitest ...`,
+  `npx pnpm@10.26.2 exec prettier ...`,
+  `npx pnpm@10.26.2 run cli:build`
+- macOS app install/inspection: `hdiutil imageinfo`, `hdiutil attach`,
+  `hdiutil detach`, `ditto`, `defaults read`, `ls -ld`, `pgrep -fl`
+- Git publish flow: `git add`, `git commit -m`, `git push`, plus read-only
+  `git status`, `git diff`, and `git log`
+
+Do not use broad approval prefixes such as plain `node`, `python`, or `rm`.
+For destructive work such as removing an existing app, killing a process, or
+deleting artifacts, still stop and get explicit user confirmation unless the
+user has clearly requested that exact action.
+
+Token-saving habits for this repo:
+
+- Use `node scripts/pake-ops.mjs build-app ... --install` for the full
+  build/download/install loop instead of narrating each command.
+- Use `node scripts/pake-ops.mjs verify-download-fix` after changes in
+  `src-tauri/src/inject/event.js` related to downloads or link handling.
+- Use `pgrep -fl "App Name"` instead of dumping the full `ps` table.
+- Use `gh run watch <id> --exit-status`; inspect logs only after failure.
+- Use targeted `rg` and `sed -n` ranges. Avoid reading `dist/`,
+  `node_modules/`, `src-tauri/target/`, generated icons, or artifact folders
+  unless they are the direct target.
+- For small source edits, verify with the narrow unit test first, then
+  Prettier check, then `cli:build` when injected JS or CLI build output can be
+  affected.
+
 ## Code Conventions
 
 - No Chinese comments in any source (Rust / TypeScript / any file). Comments and identifiers in English; follow the existing language of surrounding prose.
