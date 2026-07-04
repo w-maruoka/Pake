@@ -76,7 +76,8 @@ struct WindowBuildOptions<'a> {
     new_window_features: Option<NewWindowFeatures>,
 }
 
-const DOWNLOAD_FILENAME_QUERY_PARAMS: &[&str] = &["filename", "fileName", "file_name", "fn", "name"];
+const DOWNLOAD_FILENAME_QUERY_PARAMS: &[&str] =
+    &["filename", "fileName", "file_name", "fn", "name"];
 
 const DOWNLOAD_DISPOSITION_QUERY_PARAMS: &[&str] = &[
     "cd",
@@ -99,8 +100,7 @@ const DOWNLOADABLE_EXTENSIONS: &[&str] = &[
 
 const PREVIEWABLE_MEDIA_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "tif", "avif", "heic", "heif",
-    "mp4", "webm", "mov", "m4v", "mkv", "avi", "ogv", "mp3", "wav", "ogg", "flac", "aac",
-    "m4a",
+    "mp4", "webm", "mov", "m4v", "mkv", "avi", "ogv", "mp3", "wav", "ogg", "flac", "aac", "m4a",
 ];
 
 fn filename_from_path_value(value: &str) -> Option<String> {
