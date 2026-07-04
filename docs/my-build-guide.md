@@ -32,6 +32,7 @@ height: 800
 hide_title_bar: true
 multi_arch: true
 macos_target: universal
+force_internal_navigation: false
 ```
 
 期待する artifact:
@@ -41,6 +42,14 @@ MyPakeApp-macOS
 ```
 
 中に `.dmg` が入ります。`macos_target` を `app` にすると、ローカル確認用の `.app` を作れます。
+
+AI 系や Google 系の Web アプリでクリック先が外部ブラウザに逃げる場合は、次の入力を `true` にします。
+
+```text
+force_internal_navigation: true
+```
+
+これは Pake CLI の `--force-internal-navigation` に対応します。クリックしたリンクをアプリ内に留めるため、NotebookLM のように入口ドメインと実アプリのドメインが違うサービスで有効です。ただし、外部ヘルプや利用規約ページもアプリ内で開くことがあるため、通常の Web サイトでは必要な時だけ有効化してください。
 
 ### Windows
 
@@ -147,6 +156,52 @@ JS/CSS 注入は最初は使わないでください。使う場合は自分で�
 - AppImage が失敗する: `linux_targets` を `deb` に変えて確認してください。
 - Windows 初回ビルドが遅い: WiX や依存関係のセットアップに時間がかかります。初回は長めに待ってください。
 - macOS で universal が遅い: Intel と Apple Silicon の両方をビルドするため、単一 architecture より時間がかかります。
+- アプリ内のボタンを押すと外部ブラウザが開く: `force_internal_navigation: true` で作り直してください。入口 URL ではなく、実際に使うアプリ本体の URL を指定することも重要です。
+- 置き換えたはずなのに挙動が古い: 対象の Pake アプリを完全に終了し、必要なら `/Applications` の `.app` が新しい version になっているか `Info.plist` で確認してください。
+
+## AI 系アプリの実用メモ
+
+AI 系 Web アプリは公式アプリと名前が衝突しやすいため、原則として `ChatGPT Pake` のように末尾へ `Pake` を付けます。これにより `/Applications/ChatGPT.app` や `/Applications/Gemini.app` などの公式アプリを上書きしません。
+
+実際に作った例:
+
+```text
+ChatGPT Pake
+url: https://chatgpt.com/
+force_internal_navigation: false
+
+Gemini Pake
+url: https://gemini.google.com/app
+force_internal_navigation: false
+
+NotebookLM Pake
+url: https://notebooklm.google.com/
+force_internal_navigation: true
+```
+
+NotebookLM は `https://notebooklm.google/` で作ると概要ページは表示できますが、ノートブックを開く時に `notebooklm.google.com` 側へ遷移して外部ブラウザが開くことがあります。実用する場合は `https://notebooklm.google.com/` を起点にし、`force_internal_navigation: true` を付けてください。
+
+次に作る候補:
+
+```text
+Claude Pake
+url: https://claude.ai/
+
+Perplexity Pake
+url: https://www.perplexity.ai/
+
+Google AI Studio Pake
+url: https://aistudio.google.com/
+force_internal_navigation: true
+
+Poe Pake
+url: https://poe.com/
+
+Microsoft Copilot Pake
+url: https://copilot.microsoft.com/
+```
+
+Google ログインや外部認証が絡むサービスは、Pake の設定だけでは WebView 内ログインを完走できない場合があります。その場合は Pake の問題ではなく、認証提供側の制限である可能性があります。
 
 ## 既存 workflow との違い
 
@@ -157,4 +212,5 @@ JS/CSS 注入は最初は使わないでください。使う場合は自分で�
 - 個人利用向けの安全な default を置いています。
 - `url` と `icon` をログに直接 echo しません。
 - OS ごとの target 入力を分けています。
+- 必要に応じて `force_internal_navigation` を指定できます。
 - 成果物を `artifacts/` に集めてから upload します。
