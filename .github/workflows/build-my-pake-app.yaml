@@ -1,0 +1,291 @@
+name: Build My Pake App
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Build platform"
+        required: true
+        default: "macos-latest"
+        type: choice
+        options:
+          - "macos-latest"
+          - "windows-latest"
+          - "ubuntu-24.04"
+      url:
+        description: "Target web app URL. Do not use tokenized or session URLs."
+        required: true
+        default: "https://example.com"
+      name:
+        description: "App name. Use lowercase names for Linux."
+        required: true
+        default: "MyPakeApp"
+      icon:
+        description: "Optional icon URL or repository path. Avoid signed URLs."
+        required: false
+        default: ""
+      width:
+        description: "Window width"
+        required: true
+        default: "1200"
+      height:
+        description: "Window height"
+        required: true
+        default: "800"
+      app_version:
+        description: "Packaged app version"
+        required: true
+        default: "1.0.0"
+      fullscreen:
+        description: "Start in fullscreen mode"
+        required: true
+        default: false
+        type: boolean
+      hide_title_bar:
+        description: "Hide title bar on macOS"
+        required: true
+        default: true
+        type: boolean
+      multi_arch:
+        description: "Build a universal macOS app"
+        required: true
+        default: true
+        type: boolean
+      macos_target:
+        description: "macOS build target. universal creates Intel + Apple Silicon DMG."
+        required: true
+        default: "universal"
+        type: choice
+        options:
+          - "universal"
+          - "apple"
+          - "intel"
+          - "dmg"
+          - "app"
+          - "auto"
+      windows_target:
+        description: "Windows architecture"
+        required: true
+        default: "x64"
+        type: choice
+        options:
+          - "x64"
+          - "arm64"
+          - "auto"
+      linux_targets:
+        description: "Linux package formats, comma-separated: appimage, deb, rpm, zst"
+        required: true
+        default: "appimage"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ inputs.platform }}
+    runs-on: ${{ inputs.platform }}
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-env
+        with:
+          mode: build
+
+      - name: Build CLI
+        run: pnpm run cli:build
+
+      - name: Build Pake app (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          PAKE_TARGET_URL: ${{ inputs.url }}
+          PAKE_APP_NAME: ${{ inputs.name }}
+          PAKE_APP_ICON: ${{ inputs.icon }}
+          PAKE_APP_WIDTH: ${{ inputs.width }}
+          PAKE_APP_HEIGHT: ${{ inputs.height }}
+          PAKE_APP_VERSION: ${{ inputs.app_version }}
+          PAKE_FULLSCREEN: ${{ inputs.fullscreen }}
+          PAKE_HIDE_TITLE_BAR: ${{ inputs.hide_title_bar }}
+          PAKE_MULTI_ARCH: ${{ inputs.multi_arch }}
+          PAKE_MACOS_TARGET: ${{ inputs.macos_target }}
+          PAKE_LINUX_TARGETS: ${{ inputs.linux_targets }}
+        run: |
+          set -euo pipefail
+
+          echo "::add-mask::$PAKE_TARGET_URL"
+          if [ -n "$PAKE_APP_ICON" ]; then
+            echo "::add-mask::$PAKE_APP_ICON"
+          fi
+
+          args=(
+            "$PAKE_TARGET_URL"
+            "--name" "$PAKE_APP_NAME"
+            "--width" "$PAKE_APP_WIDTH"
+            "--height" "$PAKE_APP_HEIGHT"
+            "--app-version" "$PAKE_APP_VERSION"
+          )
+
+          if [ -n "$PAKE_APP_ICON" ]; then
+            args+=("--icon" "$PAKE_APP_ICON")
+          fi
+
+          if [ "$PAKE_FULLSCREEN" = "true" ]; then
+            args+=("--fullscreen")
+          fi
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            if [ "$PAKE_HIDE_TITLE_BAR" = "true" ]; then
+              args+=("--hide-title-bar")
+            fi
+
+            if [ "$PAKE_MULTI_ARCH" = "true" ]; then
+              args+=("--multi-arch")
+            fi
+
+            if [ "$PAKE_MACOS_TARGET" != "auto" ]; then
+              args+=("--targets" "$PAKE_MACOS_TARGET")
+            fi
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            if [ -n "$PAKE_LINUX_TARGETS" ]; then
+              args+=("--targets" "$PAKE_LINUX_TARGETS")
+            fi
+          fi
+
+          node dist/cli.js "${args[@]}"
+
+      - name: Build Pake app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PAKE_TARGET_URL: ${{ inputs.url }}
+          PAKE_APP_NAME: ${{ inputs.name }}
+          PAKE_APP_ICON: ${{ inputs.icon }}
+          PAKE_APP_WIDTH: ${{ inputs.width }}
+          PAKE_APP_HEIGHT: ${{ inputs.height }}
+          PAKE_APP_VERSION: ${{ inputs.app_version }}
+          PAKE_FULLSCREEN: ${{ inputs.fullscreen }}
+          PAKE_WINDOWS_TARGET: ${{ inputs.windows_target }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          Write-Output "::add-mask::$env:PAKE_TARGET_URL"
+          if ($env:PAKE_APP_ICON) {
+            Write-Output "::add-mask::$env:PAKE_APP_ICON"
+          }
+
+          $argsList = @(
+            $env:PAKE_TARGET_URL,
+            "--name", $env:PAKE_APP_NAME,
+            "--width", $env:PAKE_APP_WIDTH,
+            "--height", $env:PAKE_APP_HEIGHT,
+            "--app-version", $env:PAKE_APP_VERSION
+          )
+
+          if ($env:PAKE_APP_ICON) {
+            $argsList += @("--icon", $env:PAKE_APP_ICON)
+          }
+
+          if ($env:PAKE_FULLSCREEN -eq "true") {
+            $argsList += "--fullscreen"
+          }
+
+          if ($env:PAKE_WINDOWS_TARGET -ne "auto") {
+            $argsList += @("--targets", $env:PAKE_WINDOWS_TARGET)
+          }
+
+          node dist/cli.js @argsList
+          git checkout -- src-tauri/Cargo.lock
+
+      - name: Collect artifacts (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          PAKE_APP_NAME: ${{ inputs.name }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          shopt -s nullglob
+
+          files=()
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            files=(
+              "$PAKE_APP_NAME.dmg"
+              "$PAKE_APP_NAME.app"
+              src-tauri/target/release/bundle/dmg/*.dmg
+              src-tauri/target/release/bundle/macos/*.app
+              src-tauri/target/*/release/bundle/dmg/*.dmg
+              src-tauri/target/*/release/bundle/macos/*.app
+            )
+          else
+            files=(
+              "$PAKE_APP_NAME.deb"
+              "$PAKE_APP_NAME.AppImage"
+              "$PAKE_APP_NAME.rpm"
+              "$PAKE_APP_NAME"-*.pkg.tar.zst
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/appimage/*.AppImage
+              src-tauri/target/release/bundle/rpm/*.rpm
+              src-tauri/target/release/bundle/zst/*.pkg.tar.zst
+            )
+          fi
+
+          copied=0
+          for file in "${files[@]}"; do
+            if [ -e "$file" ]; then
+              cp -R "$file" artifacts/
+              copied=$((copied + 1))
+            fi
+          done
+
+          if [ "$copied" -eq 0 ]; then
+            find . \( -name "*.dmg" -o -name "*.app" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" -o -name "*.pkg.tar.zst" \) -print
+            echo "No installer artifacts found."
+            exit 1
+          fi
+
+          find artifacts -maxdepth 3 -print
+
+      - name: Collect artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PAKE_APP_NAME: ${{ inputs.name }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          New-Item -Path "artifacts" -ItemType Directory -Force | Out-Null
+          $patterns = @(
+            "$env:PAKE_APP_NAME.msi",
+            "src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi\*.msi",
+            "src-tauri\target\aarch64-pc-windows-msvc\release\bundle\msi\*.msi",
+            "src-tauri\target\release\bundle\msi\*.msi"
+          )
+
+          $copied = 0
+          foreach ($pattern in $patterns) {
+            Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+              Copy-Item -Path $_.FullName -Destination "artifacts" -Force
+              $script:copied += 1
+            }
+          }
+
+          if ($copied -eq 0) {
+            Get-ChildItem -Path . -Recurse -Include "*.msi" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+            throw "No installer artifacts found."
+          }
+
+          Get-ChildItem -Path "artifacts" -Recurse | Select-Object -ExpandProperty FullName
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ inputs.name }}-${{ runner.os }}
+          path: artifacts/**
+          if-no-files-found: error
+          retention-days: 7
