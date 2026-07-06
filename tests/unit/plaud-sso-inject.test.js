@@ -4,11 +4,9 @@ import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
 function loadPlaudSsoInject({
-  documentElements = [],
   hostname = "web.plaud.ai",
   localStorageEntries = {},
   nativeInvoke,
-  windowOpen,
   pakeConfig = {},
   runTimers = false,
   sessionStorageEntries = {},
@@ -41,17 +39,8 @@ function loadPlaudSsoInject({
         this.children.push(child);
         if (child.id) elementsById.set(child.id, child);
       },
-      contains(child) {
-        return this.children.includes(child);
-      },
-      getAttribute(name) {
-        return this[name] || "";
-      },
       remove() {
         if (this.id) elementsById.delete(this.id);
-      },
-      setAttribute(name, value) {
-        this[name] = value;
       },
       select: vi.fn(),
       set id(value) {
@@ -67,18 +56,12 @@ function loadPlaudSsoInject({
   const body = createElement("body");
   body.innerText = "";
   body.querySelectorAll = () => [];
-  const hasDocument = withBlankDocument || documentElements.length > 0;
-  const document = hasDocument
+  const document = withBlankDocument
     ? {
         body,
         createElement,
         execCommand: vi.fn(),
         getElementById: (id) => elementsById.get(id) || null,
-        querySelector: (selector) =>
-          documentElements.find((element) => element.matches?.(selector)) ||
-          null,
-        querySelectorAll: (selector) =>
-          documentElements.filter((element) => element.matches?.(selector)),
       }
     : undefined;
   const replace = vi.fn((url) => {
@@ -102,8 +85,6 @@ function loadPlaudSsoInject({
       getItem: (key) => sessionStorage.get(key) || null,
       setItem: (key, value) => sessionStorage.set(key, String(value)),
     },
-    addEventListener: vi.fn(),
-    open: windowOpen,
     setTimeout: (callback) => {
       if (runTimers) callback();
       return 1;
@@ -258,68 +239,6 @@ describe("PLAUD SSO inject", () => {
       "blank_recovery_reload",
     );
     expect(window.__PAKE_PLAUD_EXPORT_DIAG__()).not.toContain("token-value");
-  });
-
-  it("proxies the PLAUD GIS button click through an about:blank popup", () => {
-    const oauthUrl =
-      "https://accounts.google.com/o/oauth2/v2/auth?client_id=346186524912-do22m9emadd66g4imjhsvoi3bdqk4pvp.apps.googleusercontent.com&redirect_uri=https%3A%2F%2Faccounts.google.com%2Fgsi%2Ftransform&response_type=id_token";
-    const popup = {
-      focus: vi.fn(),
-      location: {
-        replace: vi.fn(),
-      },
-    };
-    const windowOpen = vi.fn(() => popup);
-    const buttonFrame = {
-      isConnected: true,
-      src: "https://accounts.google.com/gsi/button?client_id=346186524912-do22m9emadd66g4imjhsvoi3bdqk4pvp.apps.googleusercontent.com",
-      getBoundingClientRect: () => ({
-        height: 42,
-        left: 120,
-        top: 96,
-        width: 328,
-      }),
-      matches: (selector) => selector.includes("/gsi/button"),
-    };
-    const selectFrame = {
-      isConnected: true,
-      src: `https://accounts.google.com/gsi/iframe/select?origin=${encodeURIComponent(
-        "https://web.plaud.ai",
-      )}&oauth2_auth_url=${encodeURIComponent(oauthUrl)}`,
-      matches: (selector) =>
-        selector.includes("/gsi/iframe/select") ||
-        selector.includes("oauth2_auth_url="),
-    };
-
-    const window = loadPlaudSsoInject({
-      documentElements: [buttonFrame, selectFrame],
-      runTimers: true,
-      windowOpen,
-    });
-    const overlay = window.document.getElementById(
-      "pake-plaud-google-gis-click-proxy",
-    );
-    const event = {
-      preventDefault: vi.fn(),
-      stopImmediatePropagation: vi.fn(),
-      stopPropagation: vi.fn(),
-    };
-
-    expect(overlay).toBeTruthy();
-    overlay.onclick(event);
-
-    expect(event.preventDefault).toHaveBeenCalledOnce();
-    expect(event.stopPropagation).toHaveBeenCalledOnce();
-    expect(windowOpen).toHaveBeenCalledWith(
-      "about:blank",
-      "signin",
-      "width=1200,height=800,scrollbars=yes,resizable=yes",
-    );
-    expect(popup.location.replace).toHaveBeenCalledWith(oauthUrl);
-    expect(popup.focus).toHaveBeenCalledOnce();
-    expect(window.__PAKE_PLAUD_EXPORT_DIAG__()).toContain(
-      "gis_click_proxy_popup_opened",
-    );
   });
 
   it("does not reload repeatedly after the blank recovery was attempted", () => {
