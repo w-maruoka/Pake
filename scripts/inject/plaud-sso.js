@@ -489,8 +489,8 @@
         target.hostname === "accounts.google.com" &&
         (path.startsWith("/o/oauth2/") ||
           path.startsWith("/v3/signin/") ||
-          path.startsWith("/signin/oauth/")) &&
-        (redirectUri === "gis_transform" ||
+          path.startsWith("/signin/") ||
+          redirectUri === "gis_transform" ||
           redirectUri === "https://accounts.google.com/gsi/transform" ||
           redirectUri.endsWith("/gsi/transform"))
       );
@@ -560,7 +560,7 @@
   function installPlaudGisButtonProxy() {
     const doc = window.document;
     if (
-      !doc?.body ||
+      !doc ||
       typeof doc.querySelector !== "function" ||
       typeof doc.createElement !== "function"
     ) {
@@ -568,6 +568,7 @@
     }
 
     let overlay = doc.getElementById?.(GIS_CLICK_PROXY_ID) || null;
+    let observerInstalled = false;
 
     const removeOverlay = () => {
       overlay?.remove?.();
@@ -591,6 +592,23 @@
     };
 
     const ensureOverlay = () => {
+      if (!doc.body) {
+        return false;
+      }
+
+      if (!observerInstalled) {
+        observerInstalled = true;
+        try {
+          const observer = new MutationObserver(ensureOverlay);
+          observer.observe(doc.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["src", "style", "class"],
+          });
+        } catch (_) {}
+      }
+
       const buttonFrame = doc.querySelector(GIS_BUTTON_IFRAME_SELECTOR);
       if (
         !buttonFrame ||
@@ -648,16 +666,7 @@
     schedule();
     window.addEventListener?.("resize", ensureOverlay, true);
     window.addEventListener?.("scroll", ensureOverlay, true);
-
-    try {
-      const observer = new MutationObserver(ensureOverlay);
-      observer.observe(doc.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ["src", "style", "class"],
-      });
-    } catch (_) {}
+    doc.addEventListener?.("DOMContentLoaded", ensureOverlay, true);
   }
 
   function watchProperty(target, property, onValue) {
