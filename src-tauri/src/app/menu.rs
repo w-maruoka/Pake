@@ -1,5 +1,7 @@
 // Menu functionality is only used on macOS; the module is gated in app/mod.rs.
+use crate::app::plaud_diag;
 use crate::app::window::open_additional_window_safe;
+use crate::util::show_toast;
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Manager, Wry};
 use tauri_plugin_opener::OpenerExt;
@@ -8,6 +10,7 @@ pub fn set_app_menu(
     app: &AppHandle<Wry>,
     allow_multi_window: bool,
     enable_find: bool,
+    enable_plaud_diagnostics: bool,
 ) -> tauri::Result<()> {
     let pake_version = env!("CARGO_PKG_VERSION");
     let pake_menu_item_title = format!("Built with Pake V{}", pake_version);
@@ -23,7 +26,7 @@ pub fn set_app_menu(
             &view_menu(app)?,
             &navigation_menu(app)?,
             &window_submenu,
-            &help_menu(app, &pake_menu_item_title)?,
+            &help_menu(app, &pake_menu_item_title, enable_plaud_diagnostics)?,
         ],
     )?;
 
@@ -217,8 +220,22 @@ fn window_menu(app: &AppHandle<Wry>) -> tauri::Result<Submenu<Wry>> {
     Ok(window_menu)
 }
 
-fn help_menu(app: &AppHandle<Wry>, title: &str) -> tauri::Result<Submenu<Wry>> {
+fn help_menu(
+    app: &AppHandle<Wry>,
+    title: &str,
+    enable_plaud_diagnostics: bool,
+) -> tauri::Result<Submenu<Wry>> {
     let help_menu = Submenu::new(app, "Help", true)?;
+    if enable_plaud_diagnostics {
+        help_menu.append(&MenuItem::with_id(
+            app,
+            "export_plaud_diag",
+            "Export PLAUD Diagnostics",
+            true,
+            None::<&str>,
+        )?)?;
+        help_menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
     let github_item = MenuItem::with_id(app, "pake_github_link", title, true, None::<&str>)?;
     help_menu.append(&github_item)?;
     Ok(help_menu)
@@ -234,6 +251,21 @@ pub fn handle_menu_click(app_handle: &AppHandle, id: &str) {
                 .opener()
                 .open_url("https://github.com/tw93/Pake", None::<&str>);
         }
+        "export_plaud_diag" => match plaud_diag::export_to_downloads(app_handle) {
+            Ok(path) => {
+                let message = format!("Exported PLAUD diagnostics to {}", path.display());
+                eprintln!("[Pake] {message}");
+                if let Some(window) = app_handle.get_webview_window("pake") {
+                    show_toast(&window, &message);
+                }
+            }
+            Err(error) => {
+                eprintln!("[Pake] Failed to export PLAUD diagnostics: {error}");
+                if let Some(window) = app_handle.get_webview_window("pake") {
+                    show_toast(&window, "Failed to export PLAUD diagnostics");
+                }
+            }
+        },
         "reload" => {
             if let Some(window) = app_handle.get_webview_window("pake") {
                 let _ = window.eval("window.location.reload()");

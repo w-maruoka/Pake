@@ -1,3 +1,4 @@
+use crate::app::plaud_diag;
 use crate::util::{
     check_file_or_append, get_download_message_with_lang, sanitize_download_filename, show_toast,
     MessageType,
@@ -87,6 +88,16 @@ pub struct NotificationParams {
     title: String,
     body: String,
     icon: String,
+}
+
+#[command]
+pub fn record_plaud_diag(app: AppHandle, entry: serde_json::Value) -> Result<(), String> {
+    plaud_diag::record_js_entry(&app, entry)
+}
+
+#[command]
+pub fn export_plaud_diag(app: AppHandle) -> Result<String, String> {
+    plaud_diag::export_to_downloads(&app).map(|path| path.to_string_lossy().to_string())
 }
 
 #[command]

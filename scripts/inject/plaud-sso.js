@@ -12,7 +12,31 @@
   }
 
   const DIAG_STORAGE_KEY = "__pake_plaud_diag_v1";
+  const RECOVERY_STORAGE_KEY = "__pake_plaud_blank_recovery_v1";
   const MAX_DIAG_ENTRIES = 80;
+
+  function getTauriInvoke() {
+    return window.__TAURI__?.core?.invoke;
+  }
+
+  function recordNativeDiag(entry) {
+    try {
+      const invoke = getTauriInvoke();
+      if (typeof invoke === "function") {
+        invoke("record_plaud_diag", { entry }).catch(() => {});
+      }
+    } catch (_) {}
+  }
+
+  function exportNativeDiag() {
+    try {
+      const invoke = getTauriInvoke();
+      if (typeof invoke === "function") {
+        return invoke("export_plaud_diag");
+      }
+    } catch (_) {}
+    return Promise.resolve("");
+  }
 
   function getSafeLocationParts(url = window.location?.href) {
     try {
@@ -103,6 +127,7 @@
     const entries = readDiagEntries();
     entries.push(entry);
     writeDiagEntries(entries);
+    recordNativeDiag(entry);
     return entry;
   }
 
@@ -126,6 +151,7 @@
   }
 
   window.__PAKE_PLAUD_EXPORT_DIAG__ = exportDiag;
+  window.__PAKE_PLAUD_EXPORT_NATIVE_DIAG__ = exportNativeDiag;
 
   function showDiagOverlay(reason) {
     const doc = window.document;
@@ -198,6 +224,51 @@
     return bodyText.length < 20 && interactiveCount < 2 && appChildCount === 0;
   }
 
+  function hasAttemptedBlankRecovery() {
+    try {
+      return window.sessionStorage?.getItem(RECOVERY_STORAGE_KEY) === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function markBlankRecoveryAttempted() {
+    try {
+      window.sessionStorage?.setItem(RECOVERY_STORAGE_KEY, "1");
+    } catch (_) {}
+  }
+
+  function replaceLocation(url) {
+    try {
+      if (typeof window.location?.replace === "function") {
+        window.location.replace(url);
+      } else {
+        window.location.href = url;
+      }
+    } catch (_) {
+      window.location.href = url;
+    }
+  }
+
+  function tryRecoverBlankScreen(reason) {
+    if (
+      !isPlaudWeb ||
+      hasAttemptedBlankRecovery() ||
+      !getTokenPresence() ||
+      !isLikelyBlankScreen()
+    ) {
+      return false;
+    }
+
+    markBlankRecoveryAttempted();
+    recordDiag("blank_recovery_reload", {
+      reason,
+      target: { host: "web.plaud.ai", path: "/" },
+    });
+    replaceLocation("https://web.plaud.ai/");
+    return true;
+  }
+
   function scheduleBlankScreenCheck(reason, delay = 3500) {
     const schedule = window.setTimeout || globalThis.setTimeout;
     if (typeof schedule !== "function") {
@@ -207,6 +278,9 @@
     schedule(() => {
       if (isLikelyBlankScreen()) {
         recordDiag("blank_screen_detected", { reason });
+        if (tryRecoverBlankScreen(reason)) {
+          return;
+        }
         showDiagOverlay(reason);
       }
     }, delay);
@@ -339,8 +413,31 @@
     }
   }
 
+  function installStorageDiagnostics() {
+    const storage = window.localStorage;
+    if (!storage?.setItem || storage.__pakePlaudDiagPatched) {
+      return;
+    }
+
+    const originalSetItem = storage.setItem;
+    try {
+      storage.setItem = function setItemWithPlaudDiag(key, value) {
+        const result = originalSetItem.apply(this, arguments);
+        if (key === "pld_tokenstr") {
+          recordDiag("token_storage_updated", {
+            tokenPresent: Boolean(value),
+          });
+          scheduleBlankScreenCheck("token_storage_updated", 1000);
+        }
+        return result;
+      };
+      storage.__pakePlaudDiagPatched = true;
+    } catch (_) {}
+  }
+
   installNavigationDiagnostics();
   installNetworkDiagnostics();
+  installStorageDiagnostics();
   scheduleBlankScreenCheck("initial_load", 5000);
 
   if (!isPlaudWeb) {

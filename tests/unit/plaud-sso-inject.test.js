@@ -5,8 +5,11 @@ import { describe, expect, it, vi } from "vitest";
 
 function loadPlaudSsoInject({
   hostname = "web.plaud.ai",
+  localStorageEntries = {},
+  nativeInvoke,
   pakeConfig = {},
   runTimers = false,
+  sessionStorageEntries = {},
   userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5)",
   withBlankDocument = false,
 } = {}) {
@@ -16,6 +19,13 @@ function loadPlaudSsoInject({
   );
 
   const storage = new Map();
+  Object.entries(localStorageEntries).forEach(([key, value]) => {
+    storage.set(key, String(value));
+  });
+  const sessionStorage = new Map();
+  Object.entries(sessionStorageEntries).forEach(([key, value]) => {
+    sessionStorage.set(key, String(value));
+  });
   const elementsById = new Map();
   const createElement = (tagName = "div") => {
     const element = {
@@ -54,12 +64,16 @@ function loadPlaudSsoInject({
         getElementById: (id) => elementsById.get(id) || null,
       }
     : undefined;
+  const replace = vi.fn((url) => {
+    window.location.href = url;
+  });
   const window = {
     location: {
       href: `https://${hostname}/login`,
       hostname,
       origin: `https://${hostname}`,
       pathname: "/login",
+      replace,
     },
     navigator: { userAgent },
     pakeConfig,
@@ -67,11 +81,18 @@ function loadPlaudSsoInject({
       getItem: (key) => storage.get(key) || null,
       setItem: (key, value) => storage.set(key, String(value)),
     },
+    sessionStorage: {
+      getItem: (key) => sessionStorage.get(key) || null,
+      setItem: (key, value) => sessionStorage.set(key, String(value)),
+    },
     setTimeout: (callback) => {
       if (runTimers) callback();
       return 1;
     },
   };
+  if (nativeInvoke) {
+    window.__TAURI__ = { core: { invoke: nativeInvoke } };
+  }
   if (document) {
     window.document = document;
   }
@@ -122,7 +143,8 @@ describe("PLAUD SSO inject", () => {
   });
 
   it("records Google callback diagnostics without storing the credential value", () => {
-    const window = loadPlaudSsoInject();
+    const nativeInvoke = vi.fn(() => Promise.resolve());
+    const window = loadPlaudSsoInject({ nativeInvoke });
     const callback = vi.fn();
     const initializeCalls = [];
 
@@ -151,6 +173,11 @@ describe("PLAUD SSO inject", () => {
     expect(diagnostics).toContain("google_callback_invoked");
     expect(diagnostics).toContain('"hasCredential": true');
     expect(diagnostics).not.toContain("header.payload.signature");
+
+    const nativePayload = JSON.stringify(nativeInvoke.mock.calls);
+    expect(nativePayload).toContain("google_callback_invoked");
+    expect(nativePayload).toContain('"hasCredential":true');
+    expect(nativePayload).not.toContain("header.payload.signature");
   });
 
   it("suppresses Google One Tap prompt without calling the original prompt", () => {
@@ -195,6 +222,35 @@ describe("PLAUD SSO inject", () => {
     expect(window.__PAKE_PLAUD_EXPORT_DIAG__()).toContain(
       "blank_screen_detected",
     );
+  });
+
+  it("reloads the PLAUD home page once when a token exists on a blank screen", () => {
+    const window = loadPlaudSsoInject({
+      localStorageEntries: { pld_tokenstr: "token-value" },
+      runTimers: true,
+      withBlankDocument: true,
+    });
+
+    expect(window.location.replace).toHaveBeenCalledWith(
+      "https://web.plaud.ai/",
+    );
+    expect(window.document.getElementById("pake-plaud-diag")).toBeNull();
+    expect(window.__PAKE_PLAUD_EXPORT_DIAG__()).toContain(
+      "blank_recovery_reload",
+    );
+    expect(window.__PAKE_PLAUD_EXPORT_DIAG__()).not.toContain("token-value");
+  });
+
+  it("does not reload repeatedly after the blank recovery was attempted", () => {
+    const window = loadPlaudSsoInject({
+      localStorageEntries: { pld_tokenstr: "token-value" },
+      runTimers: true,
+      sessionStorageEntries: { __pake_plaud_blank_recovery_v1: "1" },
+      withBlankDocument: true,
+    });
+
+    expect(window.location.replace).not.toHaveBeenCalled();
+    expect(window.document.getElementById("pake-plaud-diag")).toBeTruthy();
   });
 
   it("does not patch outside the PLAUD web host", () => {

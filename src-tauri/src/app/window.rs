@@ -1,4 +1,4 @@
-use crate::app::config::PakeConfig;
+use crate::app::{config::PakeConfig, plaud_diag};
 use crate::util::{
     check_file_or_append, get_data_dir, get_download_message_with_lang, sanitize_download_filename,
     show_toast, MessageType,
@@ -7,6 +7,7 @@ use std::{
     path::PathBuf,
     str::FromStr,
     sync::atomic::{AtomicU32, Ordering},
+    time::Duration,
 };
 use tauri::{
     webview::{DownloadEvent, NewWindowFeatures, NewWindowResponse},
@@ -69,6 +70,34 @@ pub fn open_additional_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     build_window_with_label(app, &state.pake_config, &state.tauri_config, &label)
 }
 
+fn start_plaud_diagnostic_probe(app: &AppHandle, label: &str) {
+    let app_handle = app.clone();
+    let label = label.to_string();
+
+    tauri::async_runtime::spawn(async move {
+        for attempt in 0..20 {
+            let delay = if attempt == 0 { 2 } else { 3 };
+            tokio::time::sleep(Duration::from_secs(delay)).await;
+
+            let Some(window) = app_handle.get_webview_window(&label) else {
+                break;
+            };
+
+            if let Err(error) = window.eval(PLAUD_DIAGNOSTIC_PROBE_SCRIPT) {
+                plaud_diag::record_native_event(
+                    &app_handle,
+                    "native_probe_eval_failed",
+                    serde_json::json!({
+                        "label": label.as_str(),
+                        "attempt": attempt,
+                        "error": error.to_string(),
+                    }),
+                );
+            }
+        }
+    });
+}
+
 struct WindowBuildOptions<'a> {
     label: &'a str,
     url: WebviewUrl,
@@ -87,6 +116,57 @@ const DOWNLOAD_DISPOSITION_QUERY_PARAMS: &[&str] = &[
     "response_content_disposition",
     "disposition",
 ];
+
+const PLAUD_DIAGNOSTIC_PROBE_SCRIPT: &str = r#"
+(() => {
+  try {
+    const invoke = window.__TAURI__?.core?.invoke;
+    if (typeof invoke !== "function") {
+      return;
+    }
+
+    const getSafeLocationParts = () => {
+      try {
+        const parsedUrl = new URL(window.location.href);
+        return {
+          host: parsedUrl.hostname,
+          path: parsedUrl.pathname,
+          searchKeys: [...parsedUrl.searchParams.keys()].sort(),
+        };
+      } catch (_) {
+        return {
+          host: window.location?.hostname || "",
+          path: window.location?.pathname || "",
+          searchKeys: [],
+        };
+      }
+    };
+
+    const body = window.document?.body;
+    const app = window.document?.getElementById?.("app");
+    const interactiveCount = body?.querySelectorAll
+      ? body.querySelectorAll("a,button,input,textarea,select,[role='button'],canvas,img,svg,video").length
+      : 0;
+
+    invoke("record_plaud_diag", {
+      entry: {
+        event: "native_probe",
+        source: "window.rs",
+        timestamp: new Date().toISOString(),
+        page: getSafeLocationParts(),
+        tokenPresent: Boolean(window.localStorage?.getItem("pld_tokenstr")),
+        details: {
+          readyState: window.document?.readyState || "",
+          bodyTextLength: (body?.innerText || body?.textContent || "").trim().length,
+          interactiveCount,
+          appChildCount: app?.children?.length || 0,
+          hasDiagOverlay: Boolean(window.document?.getElementById?.("pake-plaud-diag")),
+        },
+      },
+    }).catch(() => {});
+  } catch (_) {}
+})();
+"#;
 
 const DOWNLOADABLE_EXTENSIONS: &[&str] = &[
     "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "markdown", "mdx", "rtf",
@@ -337,6 +417,7 @@ fn build_window(
 
     let user_agent = config.user_agent.get();
     let is_chatgpt_profile = window_config.performance_profile == "chatgpt";
+    let plaud_diagnostics_enabled = plaud_diag::is_plaud_app_url(&window_config.url);
 
     let config_script = format!(
         "window.pakeConfig = {}",
@@ -646,7 +727,16 @@ fn build_window(
     {
         let navigation_handle = app.clone();
         let navigation_window_label = label.to_string();
+        let record_plaud_navigation = plaud_diagnostics_enabled;
         window_builder = window_builder.on_navigation(move |url| {
+            if record_plaud_navigation && plaud_diag::should_record_navigation(&url) {
+                plaud_diag::record_navigation(
+                    &navigation_handle,
+                    &navigation_window_label,
+                    &url,
+                );
+            }
+
             let Some(filename) = download_filename_for_navigation(&url) else {
                 return true;
             };
@@ -663,7 +753,17 @@ fn build_window(
         });
     }
 
-    window_builder.build()
+    let window = window_builder.build()?;
+    if plaud_diagnostics_enabled {
+        plaud_diag::record_native_event(
+            app,
+            "native_window_built",
+            serde_json::json!({ "label": label }),
+        );
+        start_plaud_diagnostic_probe(app, label);
+    }
+
+    Ok(window)
 }
 
 #[cfg(all(test, target_os = "windows"))]

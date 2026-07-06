@@ -21,8 +21,9 @@ const GDK_BACKEND: &str = "GDK_BACKEND";
 
 use app::{
     invoke::{
-        clear_dock_badge, download_file, increment_dock_badge, save_downloaded_file,
-        send_notification, set_dock_badge, set_dock_badge_label, set_zoom, update_theme_mode,
+        clear_dock_badge, download_file, export_plaud_diag, increment_dock_badge,
+        record_plaud_diag, save_downloaded_file, send_notification, set_dock_badge,
+        set_dock_badge_label, set_zoom, update_theme_mode,
     },
     setup::{set_global_shortcut, set_system_tray},
     window::{open_additional_window_safe, set_window, MultiWindowState},
@@ -149,6 +150,7 @@ pub fn run_app() {
     let multi_instance = pake_config.multi_instance;
     let multi_window = pake_config.multi_window;
     let _enable_find = pake_config.windows[0].enable_find;
+    let enable_plaud_diagnostics = app::plaud_diag::is_plaud_app_url(&pake_config.windows[0].url);
 
     let window_state_plugin = WindowStatePlugin::default()
         .with_state_flags(if init_fullscreen {
@@ -190,6 +192,8 @@ pub fn run_app() {
             download_file,
             save_downloaded_file,
             send_notification,
+            record_plaud_diag,
+            export_plaud_diag,
             increment_dock_badge,
             set_dock_badge,
             set_dock_badge_label,
@@ -206,7 +210,12 @@ pub fn run_app() {
             // --- Menu Construction Start ---
             #[cfg(target_os = "macos")]
             {
-                app::menu::set_app_menu(app.app_handle(), multi_window, _enable_find)?;
+                app::menu::set_app_menu(
+                    app.app_handle(),
+                    multi_window,
+                    _enable_find,
+                    enable_plaud_diagnostics,
+                )?;
 
                 // Event Handling for Custom Menu Item
                 app.on_menu_event(move |app_handle, event| {
