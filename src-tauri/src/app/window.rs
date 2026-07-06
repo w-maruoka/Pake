@@ -743,11 +743,7 @@ fn build_window(
         let record_plaud_navigation = plaud_diagnostics_enabled;
         window_builder = window_builder.on_navigation(move |url| {
             if record_plaud_navigation && plaud_diag::should_record_navigation(&url) {
-                plaud_diag::record_navigation(
-                    &navigation_handle,
-                    &navigation_window_label,
-                    &url,
-                );
+                plaud_diag::record_navigation(&navigation_handle, &navigation_window_label, &url);
             }
 
             let Some(filename) = download_filename_for_navigation(&url) else {
