@@ -233,8 +233,7 @@ describe("event link guard", () => {
     expect(result).toBe(window);
   });
 
-  it("uses native macOS auth popups when new-window is enabled", () => {
-    const popup = {};
+  it("keeps macOS auth navigation in the current window when new-window is enabled", () => {
     const { openAuthNavigation, window } = loadEventHelpers({
       userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5)",
     });
@@ -242,7 +241,7 @@ describe("event link guard", () => {
     const openCalls = [];
     const originalWindowOpen = (url, name, specs) => {
       openCalls.push({ url, name, specs });
-      return popup;
+      return {};
     };
 
     const result = openAuthNavigation(
@@ -252,15 +251,9 @@ describe("event link guard", () => {
       "width=1200,height=800",
     );
 
-    expect(openCalls).toEqual([
-      {
-        url: "https://accounts.google.com/gsi/select",
-        name: "_blank",
-        specs: "width=1200,height=800",
-      },
-    ]);
-    expect(window.location.href).toBe("https://example.com/app");
-    expect(result).toBe(popup);
+    expect(openCalls).toEqual([]);
+    expect(window.location.href).toBe("https://accounts.google.com/gsi/select");
+    expect(result).toBe(window);
   });
 
   it("keeps blank macOS auth popups on the native popup path", () => {

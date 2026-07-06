@@ -51,12 +51,14 @@ Commands:
       --linux-targets appimage
       --force-internal-navigation false
       --new-window false
+      --inject ""
 
     Speed shortcuts:
       --preset chatgpt|amazon   Fill --url and --name for common personal apps.
       --app-version auto        Bump the installed app's patch version.
       --quit-running            Quit the app before installing the new DMG.
       --new-window              Allow popup windows for authentication flows.
+      --inject                  Comma-separated repository paths to JS/CSS files.
       --performance-profile     Runtime profile: default or chatgpt.
       --dry-run                 Print the planned workflow/install commands only.
 
@@ -562,6 +564,7 @@ function buildApp(options) {
       url,
       name: appName,
       icon: opt(resolvedOptions, "icon", ""),
+      inject: opt(resolvedOptions, "inject", ""),
       width: opt(resolvedOptions, "width", "1200"),
       height: opt(resolvedOptions, "height", "800"),
       app_version: resolveAppVersion(

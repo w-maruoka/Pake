@@ -24,6 +24,10 @@ on:
         description: "Optional icon URL or repository path. Avoid signed URLs."
         required: false
         default: ""
+      inject:
+        description: "Optional comma-separated repository paths to JS/CSS files to inject"
+        required: false
+        default: ""
       width:
         description: "Window width"
         required: true
@@ -123,6 +127,7 @@ jobs:
           PAKE_TARGET_URL: ${{ inputs.url }}
           PAKE_APP_NAME: ${{ inputs.name }}
           PAKE_APP_ICON: ${{ inputs.icon }}
+          PAKE_INJECT: ${{ inputs.inject }}
           PAKE_APP_WIDTH: ${{ inputs.width }}
           PAKE_APP_HEIGHT: ${{ inputs.height }}
           PAKE_APP_VERSION: ${{ inputs.app_version }}
@@ -152,6 +157,10 @@ jobs:
 
           if [ -n "$PAKE_APP_ICON" ]; then
             args+=("--icon" "$PAKE_APP_ICON")
+          fi
+
+          if [ -n "$PAKE_INJECT" ]; then
+            args+=("--inject" "$PAKE_INJECT")
           fi
 
           if [ "$PAKE_FULLSCREEN" = "true" ]; then
@@ -197,6 +206,7 @@ jobs:
           PAKE_TARGET_URL: ${{ inputs.url }}
           PAKE_APP_NAME: ${{ inputs.name }}
           PAKE_APP_ICON: ${{ inputs.icon }}
+          PAKE_INJECT: ${{ inputs.inject }}
           PAKE_APP_WIDTH: ${{ inputs.width }}
           PAKE_APP_HEIGHT: ${{ inputs.height }}
           PAKE_APP_VERSION: ${{ inputs.app_version }}
@@ -224,6 +234,10 @@ jobs:
 
           if ($env:PAKE_APP_ICON) {
             $argsList += @("--icon", $env:PAKE_APP_ICON)
+          }
+
+          if ($env:PAKE_INJECT) {
+            $argsList += @("--inject", $env:PAKE_INJECT)
           }
 
           if ($env:PAKE_FULLSCREEN -eq "true") {
