@@ -268,6 +268,7 @@ describe("event link guard", () => {
     };
     window.pakeConfig = { new_window: true };
     window.__PAKE_PLAUD_GOOGLE_GIS_POPUP_SAFE__ = true;
+    window.__PAKE_PLAUD_DIAG_LOG = vi.fn();
 
     const popup = {
       focus: vi.fn(),
@@ -301,6 +302,101 @@ describe("event link guard", () => {
     expect(popup.focus).toHaveBeenCalledOnce();
     expect(window.location.href).toBe("https://web.plaud.ai/login");
     expect(result).toBe(popup);
+    expect(window.__PAKE_PLAUD_DIAG_LOG).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "gis_popup_location_assigned",
+        source: "event.js",
+      }),
+    );
+  });
+
+  it("does not navigate the PLAUD main window when the GIS blank popup is blocked", () => {
+    const { openAuthNavigation, window } = loadEventHelpers({
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5)",
+    });
+    window.location = {
+      href: "https://web.plaud.ai/login",
+      hostname: "web.plaud.ai",
+      origin: "https://web.plaud.ai",
+      pathname: "/login",
+    };
+    window.pakeConfig = { new_window: true };
+    window.__PAKE_PLAUD_GOOGLE_GIS_POPUP_SAFE__ = true;
+    window.__PAKE_PLAUD_DIAG_LOG = vi.fn();
+
+    const openCalls = [];
+    const originalWindowOpen = (url, name, specs) => {
+      openCalls.push({ url, name, specs });
+      return null;
+    };
+    const googleGisUrl =
+      "https://accounts.google.com/gsi/select?client_id=plaud";
+
+    const result = openAuthNavigation(
+      originalWindowOpen,
+      googleGisUrl,
+      "_blank",
+      "width=1200,height=800",
+    );
+
+    expect(openCalls).toEqual([
+      {
+        url: "about:blank",
+        name: "_blank",
+        specs: "width=1200,height=800",
+      },
+    ]);
+    expect(window.location.href).toBe("https://web.plaud.ai/login");
+    expect(result).toBeNull();
+    expect(window.__PAKE_PLAUD_DIAG_LOG).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "gis_popup_open_failed",
+        source: "event.js",
+      }),
+    );
+  });
+
+  it("does not navigate the PLAUD main window when assigning the GIS popup location fails", () => {
+    const { openAuthNavigation, window } = loadEventHelpers({
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5)",
+    });
+    window.location = {
+      href: "https://web.plaud.ai/login",
+      hostname: "web.plaud.ai",
+      origin: "https://web.plaud.ai",
+      pathname: "/login",
+    };
+    window.pakeConfig = { new_window: true };
+    window.__PAKE_PLAUD_GOOGLE_GIS_POPUP_SAFE__ = true;
+    window.__PAKE_PLAUD_DIAG_LOG = vi.fn();
+
+    const popup = {
+      location: {
+        replace: vi.fn(() => {
+          throw new Error("blocked");
+        }),
+      },
+    };
+    const originalWindowOpen = () => popup;
+    const googleGisUrl =
+      "https://accounts.google.com/gsi/select?client_id=plaud";
+
+    const result = openAuthNavigation(
+      originalWindowOpen,
+      googleGisUrl,
+      "_blank",
+      "width=1200,height=800",
+    );
+
+    expect(popup.location.replace).toHaveBeenCalledWith(googleGisUrl);
+    expect(window.location.href).toBe("https://web.plaud.ai/login");
+    expect(result).toBe(popup);
+    expect(window.__PAKE_PLAUD_DIAG_LOG).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "gis_popup_location_failed",
+        source: "event.js",
+      }),
+    );
   });
 
   it("does not use the PLAUD popup escape hatch for non-GIS Google auth URLs", () => {

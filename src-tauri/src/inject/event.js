@@ -361,7 +361,47 @@ function isPlaudGoogleGisPopup(url) {
   }
 }
 
+function getPlaudDiagUrlParts(url) {
+  try {
+    const parsedUrl = new URL(url, window.location.href);
+    return {
+      host: parsedUrl.hostname,
+      path: parsedUrl.pathname,
+    };
+  } catch (_) {
+    return {
+      host: "",
+      path: "",
+    };
+  }
+}
+
+function recordPlaudDiag(event, details = {}) {
+  try {
+    const entry = {
+      event,
+      source: "event.js",
+      timestamp: new Date().toISOString(),
+      details,
+    };
+
+    if (typeof window.__PAKE_PLAUD_DIAG_LOG === "function") {
+      window.__PAKE_PLAUD_DIAG_LOG(entry);
+      return;
+    }
+
+    if (!Array.isArray(window.__PAKE_PLAUD_DIAG_LOG)) {
+      window.__PAKE_PLAUD_DIAG_LOG = [];
+    }
+    window.__PAKE_PLAUD_DIAG_LOG.push(entry);
+  } catch (_) {}
+}
+
 function openAuthPopupViaBlankWindow(originalWindowOpen, url, name, specs) {
+  recordPlaudDiag("gis_popup_open_attempt", {
+    target: getPlaudDiagUrlParts(url),
+  });
+
   const popup = originalWindowOpen.call(
     window,
     "about:blank",
@@ -370,7 +410,11 @@ function openAuthPopupViaBlankWindow(originalWindowOpen, url, name, specs) {
   );
 
   if (!popup) {
-    return navigateInCurrentWindow(url);
+    recordPlaudDiag("gis_popup_open_failed", {
+      reason: "no_popup",
+      target: getPlaudDiagUrlParts(url),
+    });
+    return null;
   }
 
   try {
@@ -383,12 +427,19 @@ function openAuthPopupViaBlankWindow(originalWindowOpen, url, name, specs) {
       popup.location = url;
     }
   } catch (_) {
-    return navigateInCurrentWindow(url);
+    recordPlaudDiag("gis_popup_location_failed", {
+      target: getPlaudDiagUrlParts(url),
+    });
+    return popup;
   }
 
   try {
     popup.focus?.();
   } catch (_) {}
+
+  recordPlaudDiag("gis_popup_location_assigned", {
+    target: getPlaudDiagUrlParts(url),
+  });
 
   return popup;
 }
