@@ -525,6 +525,14 @@ fn build_window(
     // calls show_toast().
     window_builder = window_builder.initialization_script(&config_script);
 
+    if cfg!(target_os = "macos") && plaud_diagnostics_enabled {
+        // Google Identity Services opens auth popups from accounts.google.com
+        // subframes. Keep the generic Pake link handler main-frame-only and
+        // install only the narrow PLAUD GIS popup bridge into all frames.
+        window_builder = window_builder
+            .initialization_script_for_all_frames(include_str!("../inject/plaud_gis_frame.js"));
+    }
+
     // find.js is opt-in via --enable-find and no-ops at runtime when disabled,
     // so only inject its ~700 lines when the feature is on. Avoids parsing the
     // find UI on every page load in the common (find-off) case. Matches the

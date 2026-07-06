@@ -18,13 +18,18 @@ describe("macOS new-window handling (regression: #1194)", () => {
 
     const newWindowBlock = source.slice(blockStart, blockEnd);
 
-    // The fix for #1194 unifies all platforms behind open_requested_window so
-    // popups never reuse the opener WKWebViewConfiguration. Guard against
-    // accidental reintroduction of NewWindowResponse::Allow which crashes
-    // macOS 26 with WKUserContentController duplicate handler errors.
+    // The fix for #1194 keeps generic popups behind open_requested_window so
+    // they never reuse the opener WKWebViewConfiguration. PLAUD GIS keeps a
+    // narrow native allow path for about:blank opener preservation only.
     expect(newWindowBlock).toContain("open_requested_window");
     expect(newWindowBlock).toContain("NewWindowResponse::Create");
-    expect(newWindowBlock).not.toMatch(/NewWindowResponse::Allow\b/);
+    expect(newWindowBlock).toContain(
+      "plaud_diag::should_allow_native_gis_popup",
+    );
+    expect(newWindowBlock).toMatch(
+      /plaud_diag::should_allow_native_gis_popup[\s\S]*NewWindowResponse::Allow\b/,
+    );
+    expect(newWindowBlock.match(/NewWindowResponse::Allow\b/g)).toHaveLength(1);
     expect(newWindowBlock).not.toMatch(/#\[cfg\(target_os = "macos"\)\]/);
   });
 

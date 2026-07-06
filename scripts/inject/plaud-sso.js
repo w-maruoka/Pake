@@ -13,6 +13,7 @@
 
   const DIAG_STORAGE_KEY = "__pake_plaud_diag_v1";
   const RECOVERY_STORAGE_KEY = "__pake_plaud_blank_recovery_v1";
+  const GIS_FRAME_DIAG_MESSAGE = "__PAKE_PLAUD_GIS_FRAME_DIAG__";
   const MAX_DIAG_ENTRIES = 80;
 
   function getTauriInvoke() {
@@ -152,6 +153,27 @@
 
   window.__PAKE_PLAUD_EXPORT_DIAG__ = exportDiag;
   window.__PAKE_PLAUD_EXPORT_NATIVE_DIAG__ = exportNativeDiag;
+
+  function installGisFrameDiagnostics() {
+    window.addEventListener?.(
+      "message",
+      (event) => {
+        if (event?.origin !== "https://accounts.google.com") {
+          return;
+        }
+
+        const data = event?.data;
+        if (!data || data[GIS_FRAME_DIAG_MESSAGE] !== true) {
+          return;
+        }
+
+        recordDiag(data.event || "gis_frame_event", data.details || {});
+      },
+      true,
+    );
+  }
+
+  installGisFrameDiagnostics();
 
   function showDiagOverlay(reason) {
     const doc = window.document;

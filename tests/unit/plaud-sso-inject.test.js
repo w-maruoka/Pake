@@ -67,6 +67,11 @@ function loadPlaudSsoInject({
   const replace = vi.fn((url) => {
     window.location.href = url;
   });
+  const eventListeners = {};
+  const addEventListener = (type, handler) => {
+    eventListeners[type] = eventListeners[type] || [];
+    eventListeners[type].push(handler);
+  };
   const window = {
     location: {
       href: `https://${hostname}/login`,
@@ -85,6 +90,8 @@ function loadPlaudSsoInject({
       getItem: (key) => sessionStorage.get(key) || null,
       setItem: (key, value) => sessionStorage.set(key, String(value)),
     },
+    addEventListener,
+    __eventListeners: eventListeners,
     setTimeout: (callback) => {
       if (runTimers) callback();
       return 1;
@@ -178,6 +185,53 @@ describe("PLAUD SSO inject", () => {
     expect(nativePayload).toContain("google_callback_invoked");
     expect(nativePayload).toContain('"hasCredential":true');
     expect(nativePayload).not.toContain("header.payload.signature");
+  });
+
+  it("records sanitized diagnostics from the Google GIS frame bridge", () => {
+    const window = loadPlaudSsoInject();
+    const messageHandler = window.__eventListeners.message?.[0];
+
+    expect(typeof messageHandler).toBe("function");
+
+    messageHandler({
+      origin: "https://accounts.google.com",
+      data: {
+        __PAKE_PLAUD_GIS_FRAME_DIAG__: true,
+        event: "gis_frame_popup_location_assigned",
+        details: {
+          target: {
+            host: "accounts.google.com",
+            path: "/o/oauth2/v2/auth",
+            searchKeys: ["client_id", "redirect_uri"],
+          },
+          credential: "header.payload.signature",
+        },
+      },
+    });
+
+    const diagnostics = window.__PAKE_PLAUD_EXPORT_DIAG__();
+    expect(diagnostics).toContain("gis_frame_popup_location_assigned");
+    expect(diagnostics).toContain('"credential": true');
+    expect(diagnostics).not.toContain("header.payload.signature");
+  });
+
+  it("ignores GIS frame diagnostics from non-Google origins", () => {
+    const window = loadPlaudSsoInject();
+    const messageHandler = window.__eventListeners.message?.[0];
+
+    expect(typeof messageHandler).toBe("function");
+
+    messageHandler({
+      origin: "https://example.com",
+      data: {
+        __PAKE_PLAUD_GIS_FRAME_DIAG__: true,
+        event: "should_not_record",
+      },
+    });
+
+    expect(window.__PAKE_PLAUD_EXPORT_DIAG__()).not.toContain(
+      "should_not_record",
+    );
   });
 
   it("suppresses Google One Tap prompt without calling the original prompt", () => {

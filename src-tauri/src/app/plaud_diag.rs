@@ -24,7 +24,9 @@ pub fn should_record_navigation(url: &Url) -> bool {
         return false;
     };
 
-    host == "web.plaud.ai" || (host == "accounts.google.com" && url.path().starts_with("/gsi/"))
+    host == "web.plaud.ai"
+        || (host == "accounts.google.com"
+            && (is_google_gis_flow_path(url.path()) || is_google_gis_transform_oauth_url(url)))
 }
 
 pub fn should_allow_native_gis_popup(app_url: &str, target_url: &Url) -> bool {
@@ -179,6 +181,21 @@ fn is_google_gis_flow_path(path: &str) -> bool {
         || path.starts_with("/signin/oauth/")
 }
 
+fn is_google_gis_transform_oauth_url(url: &Url) -> bool {
+    if !url.path().starts_with("/o/oauth2/") {
+        return false;
+    }
+
+    url.query_pairs().any(|(key, value)| {
+        key == "redirect_uri"
+            && (value == "gis_transform"
+                || Url::parse(&value).ok().is_some_and(|redirect_url| {
+                    redirect_url.host_str() == Some("accounts.google.com")
+                        && redirect_url.path() == "/gsi/transform"
+                }))
+    })
+}
+
 fn sanitize_value(key: Option<&str>, value: Value) -> Value {
     if key.is_some_and(is_sensitive_key) {
         return Value::Bool(value_present(&value));
@@ -264,6 +281,12 @@ mod tests {
         ));
         assert!(should_record_navigation(
             &Url::parse("https://accounts.google.com/gsi/select?client_id=123").unwrap()
+        ));
+        assert!(should_record_navigation(
+            &Url::parse("https://accounts.google.com/v3/signin/accountchooser").unwrap()
+        ));
+        assert!(should_record_navigation(
+            &Url::parse("https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=https%3A%2F%2Faccounts.google.com%2Fgsi%2Ftransform").unwrap()
         ));
         assert!(!should_record_navigation(
             &Url::parse("https://accounts.google.com/o/oauth2/auth").unwrap()
