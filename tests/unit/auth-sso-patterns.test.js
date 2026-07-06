@@ -36,6 +36,8 @@ describe("auth SSO patterns", () => {
 
   it("still matches the original OAuth providers", () => {
     expect(isAuthLink("https://accounts.google.com/o/oauth2/auth")).toBe(true);
+    expect(isAuthLink("https://accounts.google.com/gsi/select")).toBe(true);
+    expect(isAuthLink("https://appleid.apple.com/auth/authorize")).toBe(true);
     expect(isAuthLink("https://login.microsoftonline.com/common")).toBe(true);
   });
 

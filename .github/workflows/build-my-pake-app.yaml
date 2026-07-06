@@ -81,6 +81,11 @@ on:
         required: true
         default: false
         type: boolean
+      new_window:
+        description: "Allow sites to open popup windows for authentication flows"
+        required: true
+        default: false
+        type: boolean
       performance_profile:
         description: "Runtime performance profile"
         required: true
@@ -127,6 +132,7 @@ jobs:
           PAKE_MACOS_TARGET: ${{ inputs.macos_target }}
           PAKE_LINUX_TARGETS: ${{ inputs.linux_targets }}
           PAKE_FORCE_INTERNAL_NAVIGATION: ${{ inputs.force_internal_navigation }}
+          PAKE_NEW_WINDOW: ${{ inputs.new_window }}
           PAKE_PERFORMANCE_PROFILE: ${{ inputs.performance_profile }}
         run: |
           set -euo pipefail
@@ -154,6 +160,10 @@ jobs:
 
           if [ "$PAKE_FORCE_INTERNAL_NAVIGATION" = "true" ]; then
             args+=("--force-internal-navigation")
+          fi
+
+          if [ "$PAKE_NEW_WINDOW" = "true" ]; then
+            args+=("--new-window")
           fi
 
           if [ "$PAKE_PERFORMANCE_PROFILE" != "default" ]; then
@@ -193,6 +203,7 @@ jobs:
           PAKE_FULLSCREEN: ${{ inputs.fullscreen }}
           PAKE_WINDOWS_TARGET: ${{ inputs.windows_target }}
           PAKE_FORCE_INTERNAL_NAVIGATION: ${{ inputs.force_internal_navigation }}
+          PAKE_NEW_WINDOW: ${{ inputs.new_window }}
           PAKE_PERFORMANCE_PROFILE: ${{ inputs.performance_profile }}
         run: |
           Set-StrictMode -Version Latest
@@ -221,6 +232,10 @@ jobs:
 
           if ($env:PAKE_FORCE_INTERNAL_NAVIGATION -eq "true") {
             $argsList += "--force-internal-navigation"
+          }
+
+          if ($env:PAKE_NEW_WINDOW -eq "true") {
+            $argsList += "--new-window"
           }
 
           if ($env:PAKE_PERFORMANCE_PROFILE -ne "default") {

@@ -233,6 +233,36 @@ describe("event link guard", () => {
     expect(result).toBe(window);
   });
 
+  it("uses native macOS auth popups when new-window is enabled", () => {
+    const popup = {};
+    const { openAuthNavigation, window } = loadEventHelpers({
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5)",
+    });
+    window.pakeConfig = { new_window: true };
+    const openCalls = [];
+    const originalWindowOpen = (url, name, specs) => {
+      openCalls.push({ url, name, specs });
+      return popup;
+    };
+
+    const result = openAuthNavigation(
+      originalWindowOpen,
+      "https://accounts.google.com/gsi/select",
+      "_blank",
+      "width=1200,height=800",
+    );
+
+    expect(openCalls).toEqual([
+      {
+        url: "https://accounts.google.com/gsi/select",
+        name: "_blank",
+        specs: "width=1200,height=800",
+      },
+    ]);
+    expect(window.location.href).toBe("https://example.com/app");
+    expect(result).toBe(popup);
+  });
+
   it("keeps blank macOS auth popups on the native popup path", () => {
     const popup = {};
     const { openAuthNavigation, window } = loadEventHelpers({

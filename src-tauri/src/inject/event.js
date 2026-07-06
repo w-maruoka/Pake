@@ -331,7 +331,10 @@ function shouldBypassPakeLinkHandling(rawHref) {
 }
 
 function shouldNavigateAuthInCurrentWindow() {
-  return /macintosh|mac os x/i.test(navigator.userAgent);
+  return (
+    /macintosh|mac os x/i.test(navigator.userAgent) &&
+    window.pakeConfig?.new_window !== true
+  );
 }
 
 function canNavigateAuthUrl(url) {
@@ -741,7 +744,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return originalWindowOpen.call(window, url, name, specs);
     }
 
-    // Avoid macOS WebKit auth-popup crashes by navigating auth URLs in-place.
+    // Avoid macOS WebKit auth-popup crashes unless the app explicitly allows
+    // native popup windows for SSO flows.
     if (window.isAuthPopup(url, name)) {
       try {
         const baseUrl = window.location.origin + window.location.pathname;
