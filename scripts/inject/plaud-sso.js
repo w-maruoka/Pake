@@ -454,9 +454,211 @@
   // with macOS WebKit's SOAuthorization popup crash path.
   window.__PAKE_PLAUD_GOOGLE_GIS_POPUP_SAFE__ = true;
 
+  const GIS_CLICK_PROXY_ID = "pake-plaud-google-gis-click-proxy";
+  const GIS_BUTTON_IFRAME_SELECTOR =
+    'iframe[src*="accounts.google.com/gsi/button"]';
+  const GIS_SELECT_IFRAME_SELECTOR =
+    'iframe[src*="accounts.google.com/gsi/iframe/select"],iframe[src*="oauth2_auth_url="]';
+
   const hookedGoogleObjects = new WeakSet();
   const hookedAccountObjects = new WeakSet();
   const patchedIdObjects = new WeakSet();
+
+  function getElementSrc(element) {
+    return (
+      element?.src ||
+      (typeof element?.getAttribute === "function"
+        ? element.getAttribute("src")
+        : "") ||
+      ""
+    );
+  }
+
+  function isSafePlaudGisOauthUrl(oauthUrl, iframeUrl) {
+    try {
+      const source = new URL(iframeUrl, window.location.href);
+      const target = new URL(oauthUrl, source.href);
+      const redirectUri = target.searchParams.get("redirect_uri") || "";
+      const sourceOrigin = source.searchParams.get("origin") || "";
+      const path = target.pathname.toLowerCase();
+
+      return (
+        source.hostname === "accounts.google.com" &&
+        source.pathname.startsWith("/gsi/iframe/select") &&
+        sourceOrigin === "https://web.plaud.ai" &&
+        target.hostname === "accounts.google.com" &&
+        (path.startsWith("/o/oauth2/") ||
+          path.startsWith("/v3/signin/") ||
+          path.startsWith("/signin/oauth/")) &&
+        (redirectUri === "gis_transform" ||
+          redirectUri === "https://accounts.google.com/gsi/transform" ||
+          redirectUri.endsWith("/gsi/transform"))
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function findPlaudGisOauthUrl() {
+    const doc = window.document;
+    if (!doc || typeof doc.querySelectorAll !== "function") {
+      return "";
+    }
+
+    const frames = doc.querySelectorAll(GIS_SELECT_IFRAME_SELECTOR);
+    for (const frame of frames) {
+      const frameSrc = getElementSrc(frame);
+      try {
+        const frameUrl = new URL(frameSrc, window.location.href);
+        const oauthUrl = frameUrl.searchParams.get("oauth2_auth_url") || "";
+        if (oauthUrl && isSafePlaudGisOauthUrl(oauthUrl, frameUrl.href)) {
+          return new URL(oauthUrl, frameUrl.href).href;
+        }
+      } catch (_) {}
+    }
+
+    return "";
+  }
+
+  function openPlaudGisPopup(oauthUrl) {
+    let popup = null;
+    try {
+      popup = window.open(
+        "about:blank",
+        "signin",
+        "width=1200,height=800,scrollbars=yes,resizable=yes",
+      );
+    } catch (error) {
+      recordDiag("gis_click_proxy_popup_error", { error });
+      return false;
+    }
+
+    if (!popup) {
+      recordDiag("gis_click_proxy_popup_blocked");
+      return false;
+    }
+
+    try {
+      if (typeof popup.location?.replace === "function") {
+        popup.location.replace(oauthUrl);
+      } else if (popup.location) {
+        popup.location.href = oauthUrl;
+      } else {
+        popup.location = oauthUrl;
+      }
+      popup.focus?.();
+      recordDiag("gis_click_proxy_popup_opened", {
+        target: getSafeLocationParts(oauthUrl),
+      });
+      return true;
+    } catch (error) {
+      recordDiag("gis_click_proxy_location_error", { error });
+      return false;
+    }
+  }
+
+  function installPlaudGisButtonProxy() {
+    const doc = window.document;
+    if (
+      !doc?.body ||
+      typeof doc.querySelector !== "function" ||
+      typeof doc.createElement !== "function"
+    ) {
+      return;
+    }
+
+    let overlay = doc.getElementById?.(GIS_CLICK_PROXY_ID) || null;
+
+    const removeOverlay = () => {
+      overlay?.remove?.();
+      overlay = null;
+    };
+
+    const handleProxyClick = (event) => {
+      const oauthUrl = findPlaudGisOauthUrl();
+      if (!oauthUrl) {
+        recordDiag("gis_click_proxy_missing_oauth_url");
+        removeOverlay();
+        return;
+      }
+
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      if (typeof event?.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+      openPlaudGisPopup(oauthUrl);
+    };
+
+    const ensureOverlay = () => {
+      const buttonFrame = doc.querySelector(GIS_BUTTON_IFRAME_SELECTOR);
+      if (
+        !buttonFrame ||
+        buttonFrame.isConnected === false ||
+        typeof buttonFrame.getBoundingClientRect !== "function" ||
+        !findPlaudGisOauthUrl()
+      ) {
+        removeOverlay();
+        return false;
+      }
+
+      const rect = buttonFrame.getBoundingClientRect();
+      if (rect.width < 10 || rect.height < 10) {
+        removeOverlay();
+        return false;
+      }
+
+      if (!overlay) {
+        overlay = doc.createElement("button");
+        overlay.id = GIS_CLICK_PROXY_ID;
+        overlay.type = "button";
+        overlay.setAttribute?.("aria-label", "Sign in with Google");
+        overlay.onclick = handleProxyClick;
+        doc.body.appendChild(overlay);
+        recordDiag("gis_click_proxy_installed");
+      }
+
+      overlay.style.cssText = [
+        "position:fixed",
+        `left:${Math.max(0, rect.left)}px`,
+        `top:${Math.max(0, rect.top)}px`,
+        `width:${Math.max(0, rect.width)}px`,
+        `height:${Math.max(0, rect.height)}px`,
+        "z-index:2147483647",
+        "margin:0",
+        "padding:0",
+        "border:0",
+        "background:transparent",
+        "color:transparent",
+        "font-size:0",
+        "cursor:pointer",
+      ].join(";");
+      return true;
+    };
+
+    let attempts = 0;
+    const schedule = () => {
+      attempts += 1;
+      ensureOverlay();
+      if (attempts < 40) {
+        window.setTimeout?.(schedule, 250);
+      }
+    };
+
+    schedule();
+    window.addEventListener?.("resize", ensureOverlay, true);
+    window.addEventListener?.("scroll", ensureOverlay, true);
+
+    try {
+      const observer = new MutationObserver(ensureOverlay);
+      observer.observe(doc.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["src", "style", "class"],
+      });
+    } catch (_) {}
+  }
 
   function watchProperty(target, property, onValue) {
     if (
@@ -635,4 +837,5 @@
 
   watchProperty(window, "google", patchGoogle);
   patchGoogle(window.google);
+  installPlaudGisButtonProxy();
 })();
