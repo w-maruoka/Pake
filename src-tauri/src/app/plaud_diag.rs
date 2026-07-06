@@ -27,6 +27,22 @@ pub fn should_record_navigation(url: &Url) -> bool {
     host == "web.plaud.ai" || (host == "accounts.google.com" && url.path().starts_with("/gsi/"))
 }
 
+pub fn should_allow_native_gis_popup(app_url: &str, target_url: &Url) -> bool {
+    if !is_plaud_app_url(app_url) {
+        return false;
+    }
+
+    if target_url.scheme() == "about" && target_url.path() == "blank" {
+        return true;
+    }
+
+    let Some(host) = target_url.host_str().map(str::to_ascii_lowercase) else {
+        return false;
+    };
+
+    host == "accounts.google.com" && is_google_gis_flow_path(target_url.path())
+}
+
 pub fn record_js_entry(app: &AppHandle, entry: Value) -> Result<(), String> {
     append_entry(app, normalize_entry("js", entry))
 }
@@ -153,6 +169,16 @@ fn safe_url_parts(url: &Url) -> Value {
     })
 }
 
+pub fn safe_url_parts_for_diag(url: &Url) -> Value {
+    safe_url_parts(url)
+}
+
+fn is_google_gis_flow_path(path: &str) -> bool {
+    path.starts_with("/gsi/")
+        || path.starts_with("/v3/signin/")
+        || path.starts_with("/signin/oauth/")
+}
+
 fn sanitize_value(key: Option<&str>, value: Value) -> Value {
     if key.is_some_and(is_sensitive_key) {
         return Value::Bool(value_present(&value));
@@ -241,6 +267,36 @@ mod tests {
         ));
         assert!(!should_record_navigation(
             &Url::parse("https://accounts.google.com/o/oauth2/auth").unwrap()
+        ));
+    }
+
+    #[test]
+    fn allows_only_plaud_google_gis_popups_to_use_native_opener_flow() {
+        let plaud_url = "https://web.plaud.ai/";
+
+        assert!(should_allow_native_gis_popup(
+            plaud_url,
+            &Url::parse("about:blank").unwrap()
+        ));
+        assert!(should_allow_native_gis_popup(
+            plaud_url,
+            &Url::parse("https://accounts.google.com/gsi/select").unwrap()
+        ));
+        assert!(should_allow_native_gis_popup(
+            plaud_url,
+            &Url::parse("https://accounts.google.com/v3/signin/accountchooser").unwrap()
+        ));
+        assert!(should_allow_native_gis_popup(
+            plaud_url,
+            &Url::parse("https://accounts.google.com/signin/oauth/consent").unwrap()
+        ));
+        assert!(!should_allow_native_gis_popup(
+            plaud_url,
+            &Url::parse("https://accounts.google.com/o/oauth2/auth").unwrap()
+        ));
+        assert!(!should_allow_native_gis_popup(
+            "https://example.com/",
+            &Url::parse("about:blank").unwrap()
         ));
     }
 }

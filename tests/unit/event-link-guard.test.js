@@ -310,6 +310,61 @@ describe("event link guard", () => {
     );
   });
 
+  it("opens PLAUD Google GIS auth from Google's button frame through a blank popup", () => {
+    const { openAuthNavigation, window } = loadEventHelpers({
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5)",
+    });
+    window.location = {
+      href: "https://accounts.google.com/gsi/button",
+      hostname: "accounts.google.com",
+      origin: "https://accounts.google.com",
+      pathname: "/gsi/button",
+    };
+    window.pakeConfig = {
+      new_window: true,
+      url: "https://web.plaud.ai/",
+    };
+    window.__PAKE_PLAUD_DIAG_LOG = vi.fn();
+
+    const popup = {
+      focus: vi.fn(),
+      location: {
+        replace: vi.fn(),
+      },
+    };
+    const openCalls = [];
+    const originalWindowOpen = (url, name, specs) => {
+      openCalls.push({ url, name, specs });
+      return popup;
+    };
+
+    const googleChooserUrl =
+      "https://accounts.google.com/v3/signin/accountchooser?gsiwebsdk=gis_attributes";
+    const result = openAuthNavigation(
+      originalWindowOpen,
+      googleChooserUrl,
+      "_blank",
+      "width=1200,height=800",
+    );
+
+    expect(openCalls).toEqual([
+      {
+        url: "about:blank",
+        name: "_blank",
+        specs: "width=1200,height=800",
+      },
+    ]);
+    expect(popup.location.replace).toHaveBeenCalledWith(googleChooserUrl);
+    expect(window.location.href).toBe("https://accounts.google.com/gsi/button");
+    expect(result).toBe(popup);
+    expect(window.__PAKE_PLAUD_DIAG_LOG).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "gis_popup_location_assigned",
+        source: "event.js",
+      }),
+    );
+  });
+
   it("does not navigate the PLAUD main window when the GIS blank popup is blocked", () => {
     const { openAuthNavigation, window } = loadEventHelpers({
       userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5)",

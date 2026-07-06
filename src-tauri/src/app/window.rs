@@ -490,6 +490,19 @@ fn build_window(
         let popup_config = config.clone();
         let popup_tauri_config = tauri_config.clone();
         window_builder = window_builder.on_new_window(move |target_url, features| {
+            if popup_config.windows.first().is_some_and(|window_config| {
+                plaud_diag::should_allow_native_gis_popup(&window_config.url, &target_url)
+            }) {
+                plaud_diag::record_native_event(
+                    &app_handle,
+                    "native_gis_popup_allow",
+                    serde_json::json!({
+                        "target": plaud_diag::safe_url_parts_for_diag(&target_url),
+                    }),
+                );
+                return NewWindowResponse::Allow;
+            }
+
             match open_requested_window(
                 &app_handle,
                 &popup_config,

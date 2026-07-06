@@ -340,11 +340,21 @@ function canNavigateAuthUrl(url) {
 }
 
 function isPlaudGoogleGisPopup(url) {
+  const currentHost = window.location?.hostname?.toLowerCase() || "";
+  const configuredUrl = window.pakeConfig?.url || "";
+  const isPlaudConfiguredApp = /^https:\/\/web\.plaud\.ai\/?/i.test(
+    configuredUrl,
+  );
+  const isPlaudTopWindow =
+    window.__PAKE_PLAUD_GOOGLE_GIS_POPUP_SAFE__ === true &&
+    currentHost === "web.plaud.ai";
+  const isPlaudGoogleFrame =
+    isPlaudConfiguredApp && currentHost === "accounts.google.com";
+
   if (
-    window.__PAKE_PLAUD_GOOGLE_GIS_POPUP_SAFE__ !== true ||
     window.pakeConfig?.new_window !== true ||
     !shouldNavigateAuthInCurrentWindow() ||
-    window.location?.hostname?.toLowerCase() !== "web.plaud.ai"
+    (!isPlaudTopWindow && !isPlaudGoogleFrame)
   ) {
     return false;
   }
@@ -352,9 +362,13 @@ function isPlaudGoogleGisPopup(url) {
   try {
     const baseUrl = window.location.origin + window.location.pathname;
     const parsedUrl = new URL(url, baseUrl);
+    const path = parsedUrl.pathname.toLowerCase();
     return (
       parsedUrl.hostname.toLowerCase() === "accounts.google.com" &&
-      parsedUrl.pathname.toLowerCase().startsWith("/gsi/")
+      (path.startsWith("/gsi/") ||
+        (isPlaudGoogleFrame &&
+          (path.startsWith("/v3/signin/") ||
+            path.startsWith("/signin/oauth/"))))
     );
   } catch (_) {
     return false;
