@@ -9,6 +9,12 @@
     return;
   }
 
+  // event.js uses this as a narrow allow-list for PLAUD's Google Identity
+  // Services button popup. The shim below preserves PLAUD's callback-based
+  // ux_mode:"popup" flow while disabling the GIS options that were associated
+  // with macOS WebKit's SOAuthorization popup crash path.
+  window.__PAKE_PLAUD_GOOGLE_GIS_POPUP_SAFE__ = true;
+
   const hookedGoogleObjects = new WeakSet();
   const hookedAccountObjects = new WeakSet();
   const patchedIdObjects = new WeakSet();

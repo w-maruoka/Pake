@@ -339,12 +339,70 @@ function canNavigateAuthUrl(url) {
   return normalizedUrl !== "" && normalizedUrl !== "about:blank";
 }
 
+function isPlaudGoogleGisPopup(url) {
+  if (
+    window.__PAKE_PLAUD_GOOGLE_GIS_POPUP_SAFE__ !== true ||
+    window.pakeConfig?.new_window !== true ||
+    !shouldNavigateAuthInCurrentWindow() ||
+    window.location?.hostname?.toLowerCase() !== "web.plaud.ai"
+  ) {
+    return false;
+  }
+
+  try {
+    const baseUrl = window.location.origin + window.location.pathname;
+    const parsedUrl = new URL(url, baseUrl);
+    return (
+      parsedUrl.hostname.toLowerCase() === "accounts.google.com" &&
+      parsedUrl.pathname.toLowerCase().startsWith("/gsi/")
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+function openAuthPopupViaBlankWindow(originalWindowOpen, url, name, specs) {
+  const popup = originalWindowOpen.call(
+    window,
+    "about:blank",
+    name || "_blank",
+    specs,
+  );
+
+  if (!popup) {
+    return navigateInCurrentWindow(url);
+  }
+
+  try {
+    const popupLocation = popup.location;
+    if (popupLocation && typeof popupLocation.replace === "function") {
+      popupLocation.replace(url);
+    } else if (popupLocation) {
+      popupLocation.href = url;
+    } else {
+      popup.location = url;
+    }
+  } catch (_) {
+    return navigateInCurrentWindow(url);
+  }
+
+  try {
+    popup.focus?.();
+  } catch (_) {}
+
+  return popup;
+}
+
 function navigateInCurrentWindow(url) {
   window.location.href = url;
   return window;
 }
 
 function openAuthNavigation(originalWindowOpen, url, name, specs) {
+  if (isPlaudGoogleGisPopup(url) && canNavigateAuthUrl(url)) {
+    return openAuthPopupViaBlankWindow(originalWindowOpen, url, name, specs);
+  }
+
   if (shouldNavigateAuthInCurrentWindow() && canNavigateAuthUrl(url)) {
     return navigateInCurrentWindow(url);
   }

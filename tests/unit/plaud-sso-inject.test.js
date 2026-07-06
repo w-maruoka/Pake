@@ -29,6 +29,8 @@ describe("PLAUD SSO inject", () => {
     const callback = () => {};
     const initializeCalls = [];
 
+    expect(window.__PAKE_PLAUD_GOOGLE_GIS_POPUP_SAFE__).toBe(true);
+
     window.google = {
       accounts: {
         id: {
@@ -83,6 +85,8 @@ describe("PLAUD SSO inject", () => {
   it("does not patch outside the PLAUD web host", () => {
     const window = loadPlaudSsoInject({ hostname: "example.com" });
     const initialize = vi.fn();
+
+    expect(window.__PAKE_PLAUD_GOOGLE_GIS_POPUP_SAFE__).toBeUndefined();
 
     window.google = {
       accounts: {
