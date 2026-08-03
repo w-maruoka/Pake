@@ -16,6 +16,7 @@ const appPresets = {
     url: "https://chatgpt.com/",
     name: "ChatGPT Pake",
     "performance-profile": "chatgpt",
+    microphone: true,
   },
   amazon: {
     url: "https://www.amazon.co.jp/",
@@ -51,6 +52,7 @@ Commands:
       --linux-targets appimage
       --force-internal-navigation false
       --new-window false
+      --microphone false
       --inject ""
 
     Speed shortcuts:
@@ -60,6 +62,7 @@ Commands:
       --new-window              Allow popup windows for authentication flows.
       --inject                  Comma-separated repository paths to JS/CSS files.
       --performance-profile     Runtime profile: default or chatgpt.
+      --microphone              Request microphone access on macOS.
       --dry-run                 Print the planned workflow/install commands only.
 
     Useful examples:
@@ -582,6 +585,7 @@ function buildApp(options) {
         "performance-profile",
         "default",
       ),
+      microphone: boolOpt(resolvedOptions, "microphone", false),
       force_internal_navigation: boolOpt(
         resolvedOptions,
         "force-internal-navigation",

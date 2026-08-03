@@ -123,6 +123,17 @@ describe("Workflow path integration", () => {
   });
 
   describe("Workflow artifact uploads", () => {
+    it("forwards macOS microphone permission to the Pake CLI", () => {
+      const workflow = fs.readFileSync(
+        ".github/workflows/build-my-pake-app.yaml",
+        "utf8",
+      );
+
+      expect(workflow).toContain("microphone:");
+      expect(workflow).toContain("PAKE_MICROPHONE: ${{ inputs.microphone }}");
+      expect(workflow).toContain('args+=("--microphone")');
+    });
+
     it("should upload every Linux workflow package format", () => {
       const workflow = fs.readFileSync(
         ".github/workflows/pake-cli.yaml",

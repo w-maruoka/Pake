@@ -93,7 +93,8 @@ apps:
 Shortcut options in `scripts/pake-ops.mjs` keep future turns shorter:
 
 - `--preset chatgpt` expands to `--url https://chatgpt.com/ --name "ChatGPT Pake"`
-  and enables the ChatGPT runtime performance profile.
+  and enables the ChatGPT runtime performance profile plus macOS microphone
+  access. Pass `--no-microphone` only when building a text-only variant.
 - `--preset amazon` expands to `--url https://www.amazon.co.jp/ --name "Amazon Pake"`.
 - `--app-version auto` reads the installed `/Applications/<App>.app` version
   and bumps the patch version, e.g. `1.0.4` -> `1.0.5`.

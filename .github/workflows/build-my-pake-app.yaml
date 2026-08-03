@@ -98,6 +98,11 @@ on:
         options:
           - "default"
           - "chatgpt"
+      microphone:
+        description: "Request microphone access on macOS"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -139,6 +144,7 @@ jobs:
           PAKE_FORCE_INTERNAL_NAVIGATION: ${{ inputs.force_internal_navigation }}
           PAKE_NEW_WINDOW: ${{ inputs.new_window }}
           PAKE_PERFORMANCE_PROFILE: ${{ inputs.performance_profile }}
+          PAKE_MICROPHONE: ${{ inputs.microphone }}
         run: |
           set -euo pipefail
 
@@ -180,6 +186,10 @@ jobs:
           fi
 
           if [ "$RUNNER_OS" = "macOS" ]; then
+            if [ "$PAKE_MICROPHONE" = "true" ]; then
+              args+=("--microphone")
+            fi
+
             if [ "$PAKE_HIDE_TITLE_BAR" = "true" ]; then
               args+=("--hide-title-bar")
             fi
